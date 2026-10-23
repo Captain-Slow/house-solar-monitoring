@@ -1,0 +1,531 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type AccountingPolicy {
+  batterySource: String!
+  createdAt: DateTime!
+  effectiveFrom: DateTime!
+  gridSource: String!
+  loadSource: String!
+  maxGapSec: Int!
+  note: String!
+  pvSource: String!
+  supersededByVersion: Int
+  validated: String!
+  version: Int!
+}
+
+type AccountingPolicyChange {
+  billingPeriodsInvalidated: Int!
+  calculationRun: CalculationRun
+  outsideRetentionBefore: DateTime
+  policy: AccountingPolicy!
+}
+
+input AccountingPolicyInput {
+  batterySource: String!
+  effectiveFrom: DateTime!
+  gridSource: String!
+  loadSource: String!
+  maxGapSec: Int!
+  note: String!
+  pvSource: String!
+  validated: String
+}
+
+enum AccountingStatus {
+  MAPPING_PROVISIONAL
+  RECONCILED
+  RECONCILIATION_FAILED
+  UNRECONCILED
+}
+
+type BillingPeriod {
+  endDate: LocalDate!
+  id: Int!
+  note: String
+  result: BillingPeriodResult
+  stale: Boolean!
+  startDate: LocalDate!
+  tariffId: Int!
+}
+
+type BillingPeriodConnection {
+  edges: [BillingPeriodEdge!]!
+  pageInfo: PageInfo!
+}
+
+type BillingPeriodEdge {
+  cursor: String!
+  node: BillingPeriod!
+}
+
+input BillingPeriodInput {
+  bill: String
+  endDate: LocalDate!
+  note: String
+  openingCreditLots: [OpeningCreditLotInput!]
+  startDate: LocalDate!
+  tariffId: Int!
+}
+
+type BillingPeriodResult {
+  coverage: Decimal!
+  isLowerBound: Boolean!
+  lineItems: [LineItem!]!
+  nem: NemState
+  reasons: [String!]!
+  status: BillingStatus!
+  subtotal: Decimal
+  total: Decimal
+}
+
+enum BillingStatus {
+  COMPLETE
+  ESTIMATED
+  UNAVAILABLE
+}
+
+type CalculationRun {
+  calcVersion: Int!
+  error: String
+  finishedAt: DateTime
+  id: Int!
+  kind: String!
+  mappingVersion: Int!
+  outsideRetentionBefore: DateTime
+  rangeEnd: DateTime!
+  rangeStart: DateTime!
+  reason: String!
+  startedAt: DateTime!
+  status: String!
+}
+
+type CalculationRunConnection {
+  edges: [CalculationRunEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CalculationRunEdge {
+  cursor: String!
+  node: CalculationRun!
+}
+
+type CollectorStatus {
+  acquisitionSource: String!
+  calcVersion: Int!
+  consecutiveFailures: Int!
+  device: Device
+  lastBackupAt: DateTime
+  lastError: String
+  lastErrorAt: DateTime
+  lastSuccessAt: DateTime
+  mappingVersion: Int!
+  monitoringSince: DateTime
+  nextRetryAt: DateTime
+  policyVersion: Int!
+  siteTimezone: String!
+  state: String!
+  tlsCertExpiresAt: DateTime!
+}
+
+type CreditLot {
+  kwh: Decimal!
+  originStart: LocalDate!
+}
+
+type DataExclusion {
+  createdAt: DateTime!
+  createdBy: String!
+  families: [String!]!
+  from: DateTime!
+  id: Int!
+  reason: String!
+  to: DateTime!
+}
+
+input DataExclusionInput {
+  families: [String!]!
+  from: DateTime!
+  reason: String!
+  to: DateTime!
+}
+
+type DataQualityEvent {
+  createdAt: DateTime!
+  deviceId: Int
+  endedAt: DateTime
+  id: String!
+  kind: String!
+  startedAt: DateTime!
+}
+
+type DataQualityEventConnection {
+  edges: [DataQualityEventEdge!]!
+  pageInfo: PageInfo!
+}
+
+type DataQualityEventEdge {
+  cursor: String!
+  node: DataQualityEvent!
+}
+
+"""
+A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.
+"""
+scalar DateTime
+
+"""
+Decimal encoded as a fixed-point string (up to 12 integer and 6 fractional digits).
+"""
+scalar Decimal
+
+type Device {
+  deviceKey: String!
+  firstSeenAt: DateTime!
+  id: Int!
+  lastSeenAt: DateTime!
+  model: String!
+  retiredAt: DateTime
+}
+
+type EnergyRow {
+  batteryCharge: EnergyValue!
+  batteryDischarge: EnergyValue!
+  consumption: EnergyValue!
+  gridByWindow: [WindowEnergy!]!
+  gridExport: EnergyValue!
+  gridImport: EnergyValue!
+  periodEnd: LocalDate!
+  periodStart: LocalDate!
+  solar: EnergyValue!
+  vendor: VendorComparison!
+}
+
+type EnergyTotals {
+  lastSourceUpdate: DateTime
+  monitoringSince: DateTime
+  preMonitoringExcluded: Boolean!
+  rows: [EnergyRow!]!
+  total: EnergyRow!
+}
+
+type EnergyValue {
+  coverage: Decimal!
+  flags: [String!]!
+  kwh: Decimal
+  provenance: Provenance!
+  source: String!
+  status: ValueStatus!
+  validated: Boolean!
+}
+
+enum Freshness {
+  LIVE
+  NO_DATA
+  STALE
+}
+
+enum Granularity {
+  DAY
+  MONTH
+  WEEK
+  YEAR
+}
+
+input HolidayInput {
+  date: LocalDate!
+  name: String!
+}
+
+type LineItem {
+  amount: Decimal
+  code: String!
+  kind: String!
+  label: String!
+  note: String
+  quantityKwh: Decimal
+  rate: Decimal
+  segment: Int!
+  status: String!
+}
+
+type LiveStatus {
+  accountingStatus: AccountingStatus!
+  activeFaults: [String!]!
+  ageSeconds: Int
+  battery: PowerValue!
+  batterySoc: Int
+  batteryState: String
+  freshness: Freshness!
+  grid: PowerValue!
+  gridPhases: [PowerValue!]!
+  load: PowerValue!
+  loadVendor: PowerValue!
+  meterLink: String
+  observedAt: DateTime
+  operatingMode: OperatingMode
+  pv: PowerValue!
+  pvStrings: [PowerValue!]!
+  serverTime: DateTime!
+}
+
+"""
+A local date string (i.e., with no associated timezone) in `YYYY-MM-DD` format, e.g. `2020-01-01`.
+"""
+scalar LocalDate
+
+type MeterReading {
+  createdAt: DateTime!
+  exportKwh: Decimal
+  id: Int!
+  importKwh: Decimal!
+  importOffpeakKwh: Decimal
+  importPeakKwh: Decimal
+  note: String
+  readAt: DateTime!
+  resolutionKwh: Decimal!
+  source: MeterReadingSource!
+}
+
+type MeterReadingConnection {
+  edges: [MeterReadingEdge!]!
+  pageInfo: PageInfo!
+}
+
+type MeterReadingEdge {
+  cursor: String!
+  node: MeterReading!
+}
+
+input MeterReadingInput {
+  exportKwh: Decimal
+  importKwh: Decimal!
+  importOffpeakKwh: Decimal
+  importPeakKwh: Decimal
+  note: String
+  readAt: DateTime!
+  resolutionKwh: Decimal
+  source: MeterReadingSource!
+}
+
+enum MeterReadingSource {
+  HOYMILES_METER_LCD
+  UTILITY_METER_MANUAL
+}
+
+type MetricSeries {
+  metric: PowerMetric!
+  points: [SeriesPoint!]!
+}
+
+type Mutation {
+  addMeterReading(input: MeterReadingInput!): MeterReading!
+  createAccountingPolicy(input: AccountingPolicyInput!): AccountingPolicyChange!
+  createDataExclusion(input: DataExclusionInput!): DataExclusion!
+  createTariff(input: TariffInput!): Tariff!
+  createTariffVersion(effectiveFrom: LocalDate!, effectiveTo: LocalDate, rules: String!, sourceNote: String!, tariffId: Int!): TariffVersion!
+  deleteDataExclusion(id: Int!): Boolean!
+  deleteMeterReading(id: Int!): Boolean!
+  requestRecalculation(from: DateTime!, kind: String!, reason: String!, to: DateTime!): CalculationRun!
+  setMonthlyRate(componentCode: String!, month: String!, ratePerKwh: Decimal!, sourceNote: String!, tariffId: Int!): TariffMonthlyRate!
+  setTariffHolidays(holidays: [HolidayInput!]!, tariffId: Int!, year: Int!): [TariffHoliday!]!
+  upsertBillingPeriod(input: BillingPeriodInput!): BillingPeriod!
+}
+
+type NemState {
+  closingLots: [CreditLot!]!
+  expiredLots: [CreditLot!]!
+  openingLots: [CreditLot!]!
+}
+
+input OpeningCreditLotInput {
+  kwh: Decimal!
+  originStart: LocalDate!
+}
+
+type OperatingMode {
+  code: Int!
+  label: String!
+  observedAt: DateTime!
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+}
+
+enum PowerMetric {
+  BATTERY
+  GRID
+  GRID_A
+  GRID_B
+  GRID_C
+  INVERTER_AC
+  LOAD
+  LOAD_VENDOR
+  PV
+  SOC
+}
+
+type PowerSeries {
+  bucketSeconds: Int!
+  gaps: [TimeRange!]!
+  series: [MetricSeries!]!
+}
+
+type PowerValue {
+  reason: String
+  status: ValueStatus!
+  watts: Int
+}
+
+enum Provenance {
+  DERIVED
+  DEVICE_COUNTER
+  ESTIMATED
+  MEASURED_INTEGRATED
+  VENDOR_SUMMARY
+}
+
+type Query {
+  accountingPolicies: [AccountingPolicy!]!
+  billingPeriod(id: Int!): BillingPeriod
+  billingPeriods(after: String, first: Int! = 24): BillingPeriodConnection!
+  calculationRuns(after: String, first: Int! = 20): CalculationRunConnection!
+  collectorStatus: CollectorStatus!
+  dataExclusions(first: Int! = 100): [DataExclusion!]!
+  dataQualityEvents(after: String, first: Int = 100, from: DateTime!, kinds: [String!], to: DateTime!): DataQualityEventConnection!
+  devices: [Device!]!
+  energyTotals(
+    fromDate: LocalDate!
+    granularity: Granularity!
+
+    """Explicit tariff for gridByWindow; omitted means no window breakdown."""
+    tariffId: Int
+    toDate: LocalDate!
+  ): EnergyTotals!
+  liveStatus: LiveStatus!
+  meterReadings(after: String, first: Int! = 50): MeterReadingConnection!
+  powerSeries(from: DateTime!, maxPoints: Int! = 1000, metrics: [PowerMetric!]!, to: DateTime!): PowerSeries!
+  reconciliation(fromReadingId: Int!, toReadingId: Int!): Reconciliation!
+  tariffHolidays(tariffId: Int!, year: Int!): [TariffHoliday!]!
+  tariffMonthlyRates(tariffId: Int!): [TariffMonthlyRate!]!
+  tariffs: [Tariff!]!
+
+  """Role of the calling token (ADMIN or VIEWER)."""
+  viewerRole: String!
+}
+
+type Reconciliation {
+  candidates: [ReconciliationCandidate!]!
+  fromReadingId: Int!
+  investigationPath: [String!]!
+  toReadingId: Int!
+}
+
+type ReconciliationCandidate {
+  coverage: Decimal!
+  export: ReconciliationDirection!
+  import: ReconciliationDirection!
+  source: String!
+}
+
+type ReconciliationDirection {
+  oursKwh: Decimal
+  ratio: Decimal
+  utilityKwh: Decimal
+  verdict: String!
+}
+
+type SeriesPoint {
+  avg: Int
+  coverage: Decimal!
+  max: Int
+  min: Int
+  t: DateTime!
+}
+
+type Tariff {
+  currency: String!
+  id: Int!
+  name: String!
+  timezone: String!
+  versions: [TariffVersion!]!
+}
+
+type TariffHoliday {
+  date: LocalDate!
+  name: String!
+  tariffId: Int!
+}
+
+input TariffInput {
+  currency: String!
+  name: String!
+  timezone: String!
+}
+
+type TariffMonthlyRate {
+  componentCode: String!
+  month: String!
+  ratePerKwh: Decimal!
+  sourceNote: String!
+  tariffId: Int!
+}
+
+type TariffVersion {
+  billVerified: Boolean!
+  effectiveFrom: LocalDate!
+  effectiveTo: LocalDate
+  id: Int!
+  rules: String!
+  sourceNote: String!
+  tariffId: Int!
+}
+
+type TimeRange {
+  from: DateTime!
+  to: DateTime!
+}
+
+enum ValueStatus {
+  OK
+  PARTIAL
+  STALE
+  UNAVAILABLE
+}
+
+type VendorComparison {
+  """
+  Last minus first raw lifetime readings within the range; unvalidated, not ledger energy.
+  """
+  intervalDelta: VendorQuantities!
+
+  """
+  Last raw lifetime readings in the range; includes pre-monitoring energy and is unvalidated.
+  """
+  lifetime: VendorQuantities!
+  vendorToday: VendorQuantities!
+}
+
+type VendorQuantities {
+  batteryCharge: VendorValue!
+  batteryDischarge: VendorValue!
+  consumption: VendorValue!
+  gridExport: VendorValue!
+  gridImport: VendorValue!
+  solar: VendorValue!
+}
+
+type VendorValue {
+  kwh: Decimal
+  provenance: Provenance!
+}
+
+type WindowEnergy {
+  exportKwh: EnergyValue!
+  importKwh: EnergyValue!
+  window: String!
+}
