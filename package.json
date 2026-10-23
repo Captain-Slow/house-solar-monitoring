@@ -1,0 +1,18 @@
+{
+  "name": "house-solar-monitoring",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.11 <25"
+  },
+  "allowScripts": {
+    "prisma@7.10.1": true,
+    "@prisma/engines@7.10.1": true,
+    "@apollo/protobufjs": false,
+    "@serialport/bindings-cpp": false,
+    "electron@44.7.2": true
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+.env*
+captures/local/
+.secrets/
+*.tsbuildinfo
+release/
+.tmp-desktop/

@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/out
+.git
+.env*
+**/.env*
+**/.secrets
+captures
+docs
+deploy
+**/*.spec.ts
+**/test
