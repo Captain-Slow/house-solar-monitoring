@@ -1,0 +1,541 @@
+fragment PowerFields on PowerValue {
+  watts
+  status
+  reason
+}
+fragment EnergyFields on EnergyValue {
+  kwh
+  coverage
+  flags
+  provenance
+  source
+  status
+  validated
+}
+fragment VendorFields on VendorQuantities {
+  solar {
+    kwh
+    provenance
+  }
+  consumption {
+    kwh
+    provenance
+  }
+  gridImport {
+    kwh
+    provenance
+  }
+  gridExport {
+    kwh
+    provenance
+  }
+  batteryCharge {
+    kwh
+    provenance
+  }
+  batteryDischarge {
+    kwh
+    provenance
+  }
+}
+fragment EnergyRowFields on EnergyRow {
+  periodStart
+  periodEnd
+  solar {
+    ...EnergyFields
+  }
+  consumption {
+    ...EnergyFields
+  }
+  gridImport {
+    ...EnergyFields
+  }
+  gridExport {
+    ...EnergyFields
+  }
+  batteryCharge {
+    ...EnergyFields
+  }
+  batteryDischarge {
+    ...EnergyFields
+  }
+  gridByWindow {
+    window
+    importKwh {
+      ...EnergyFields
+    }
+    exportKwh {
+      ...EnergyFields
+    }
+  }
+  vendor {
+    lifetime {
+      ...VendorFields
+    }
+    intervalDelta {
+      ...VendorFields
+    }
+    vendorToday {
+      ...VendorFields
+    }
+  }
+}
+fragment PeriodFields on BillingPeriod {
+  id
+  startDate
+  endDate
+  tariffId
+  note
+  stale
+  result {
+    coverage
+    isLowerBound
+    reasons
+    status
+    subtotal
+    total
+    lineItems {
+      amount
+      code
+      kind
+      label
+      note
+      quantityKwh
+      rate
+      segment
+      status
+    }
+    nem {
+      openingLots {
+        kwh
+        originStart
+      }
+      closingLots {
+        kwh
+        originStart
+      }
+      expiredLots {
+        kwh
+        originStart
+      }
+    }
+  }
+}
+fragment PolicyFields on AccountingPolicy {
+  version
+  effectiveFrom
+  gridSource
+  pvSource
+  batterySource
+  loadSource
+  maxGapSec
+  note
+  validated
+  createdAt
+  supersededByVersion
+}
+fragment RunFields on CalculationRun {
+  id
+  kind
+  reason
+  status
+  error
+  startedAt
+  finishedAt
+  rangeStart
+  rangeEnd
+  mappingVersion
+  calcVersion
+  outsideRetentionBefore
+}
+fragment MeterFields on MeterReading {
+  id
+  readAt
+  source
+  importKwh
+  exportKwh
+  importPeakKwh
+  importOffpeakKwh
+  resolutionKwh
+  note
+  createdAt
+}
+fragment TariffFields on Tariff {
+  id
+  name
+  currency
+  timezone
+  versions {
+    id
+    effectiveFrom
+    effectiveTo
+    rules
+    sourceNote
+    billVerified
+    tariffId
+  }
+}
+
+query LiveStatus {
+  liveStatus {
+    serverTime
+    observedAt
+    ageSeconds
+    freshness
+    accountingStatus
+    activeFaults
+    battery {
+      ...PowerFields
+    }
+    grid {
+      ...PowerFields
+    }
+    load {
+      ...PowerFields
+    }
+    loadVendor {
+      ...PowerFields
+    }
+    pv {
+      ...PowerFields
+    }
+    gridPhases {
+      ...PowerFields
+    }
+    pvStrings {
+      ...PowerFields
+    }
+    batterySoc
+    batteryState
+    meterLink
+    operatingMode {
+      code
+      label
+      observedAt
+    }
+  }
+}
+query CollectorStatus {
+  collectorStatus {
+    acquisitionSource
+    calcVersion
+    consecutiveFailures
+    lastBackupAt
+    lastError
+    lastErrorAt
+    lastSuccessAt
+    mappingVersion
+    monitoringSince
+    nextRetryAt
+    policyVersion
+    siteTimezone
+    state
+    tlsCertExpiresAt
+    device {
+      id
+      deviceKey
+      firstSeenAt
+      lastSeenAt
+      model
+      retiredAt
+    }
+  }
+}
+query EnergyTotals(
+  $fromDate: LocalDate!
+  $toDate: LocalDate!
+  $granularity: Granularity!
+  $tariffId: Int
+) {
+  energyTotals(
+    fromDate: $fromDate
+    toDate: $toDate
+    granularity: $granularity
+    tariffId: $tariffId
+  ) {
+    lastSourceUpdate
+    monitoringSince
+    preMonitoringExcluded
+    rows {
+      ...EnergyRowFields
+    }
+    total {
+      ...EnergyRowFields
+    }
+  }
+}
+query PowerSeries(
+  $from: DateTime!
+  $to: DateTime!
+  $metrics: [PowerMetric!]!
+  $maxPoints: Int = 1000
+) {
+  powerSeries(from: $from, to: $to, metrics: $metrics, maxPoints: $maxPoints) {
+    bucketSeconds
+    gaps {
+      from
+      to
+    }
+    series {
+      metric
+      points {
+        t
+        avg
+        min
+        max
+        coverage
+      }
+    }
+  }
+}
+query DataQualityEvents(
+  $from: DateTime!
+  $to: DateTime!
+  $kinds: [String!]
+  $first: Int = 100
+  $after: String
+) {
+  dataQualityEvents(
+    from: $from
+    to: $to
+    kinds: $kinds
+    first: $first
+    after: $after
+  ) {
+    edges {
+      cursor
+      node {
+        id
+        kind
+        startedAt
+        endedAt
+        createdAt
+        deviceId
+      }
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+query Devices {
+  devices {
+    id
+    deviceKey
+    firstSeenAt
+    lastSeenAt
+    model
+    retiredAt
+  }
+}
+query ViewerRole {
+  viewerRole
+}
+query Tariffs {
+  tariffs {
+    ...TariffFields
+  }
+}
+query TariffHolidays($tariffId: Int!, $year: Int!) {
+  tariffHolidays(tariffId: $tariffId, year: $year) {
+    date
+    name
+    tariffId
+  }
+}
+query TariffMonthlyRates($tariffId: Int!) {
+  tariffMonthlyRates(tariffId: $tariffId) {
+    componentCode
+    month
+    ratePerKwh
+    sourceNote
+    tariffId
+  }
+}
+query DataExclusions($first: Int! = 100) {
+  dataExclusions(first: $first) {
+    id
+    from
+    to
+    families
+    reason
+    createdAt
+    createdBy
+  }
+}
+query BillingPeriods($first: Int! = 24, $after: String) {
+  billingPeriods(first: $first, after: $after) {
+    edges {
+      cursor
+      node {
+        ...PeriodFields
+      }
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+query BillingPeriod($id: Int!) {
+  billingPeriod(id: $id) {
+    ...PeriodFields
+  }
+}
+query MeterReadings($first: Int! = 50, $after: String) {
+  meterReadings(first: $first, after: $after) {
+    edges {
+      cursor
+      node {
+        ...MeterFields
+      }
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+query Reconciliation($fromReadingId: Int!, $toReadingId: Int!) {
+  reconciliation(fromReadingId: $fromReadingId, toReadingId: $toReadingId) {
+    fromReadingId
+    toReadingId
+    investigationPath
+    candidates {
+      source
+      coverage
+      import {
+        oursKwh
+        utilityKwh
+        ratio
+        verdict
+      }
+      export {
+        oursKwh
+        utilityKwh
+        ratio
+        verdict
+      }
+    }
+  }
+}
+query AccountingPolicies {
+  accountingPolicies {
+    ...PolicyFields
+  }
+}
+query CalculationRuns($first: Int! = 20, $after: String) {
+  calculationRuns(first: $first, after: $after) {
+    edges {
+      cursor
+      node {
+        ...RunFields
+      }
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+
+mutation CreateTariff($input: TariffInput!) {
+  createTariff(input: $input) {
+    ...TariffFields
+  }
+}
+mutation CreateTariffVersion(
+  $tariffId: Int!
+  $effectiveFrom: LocalDate!
+  $effectiveTo: LocalDate
+  $rules: String!
+  $sourceNote: String!
+) {
+  createTariffVersion(
+    tariffId: $tariffId
+    effectiveFrom: $effectiveFrom
+    effectiveTo: $effectiveTo
+    rules: $rules
+    sourceNote: $sourceNote
+  ) {
+    id
+    effectiveFrom
+    effectiveTo
+    rules
+    sourceNote
+    billVerified
+    tariffId
+  }
+}
+mutation SetTariffHolidays(
+  $tariffId: Int!
+  $year: Int!
+  $holidays: [HolidayInput!]!
+) {
+  setTariffHolidays(tariffId: $tariffId, year: $year, holidays: $holidays) {
+    date
+    name
+    tariffId
+  }
+}
+mutation SetMonthlyRate(
+  $tariffId: Int!
+  $month: String!
+  $componentCode: String!
+  $ratePerKwh: Decimal!
+  $sourceNote: String!
+) {
+  setMonthlyRate(
+    tariffId: $tariffId
+    month: $month
+    componentCode: $componentCode
+    ratePerKwh: $ratePerKwh
+    sourceNote: $sourceNote
+  ) {
+    tariffId
+    month
+    componentCode
+    ratePerKwh
+    sourceNote
+  }
+}
+mutation UpsertBillingPeriod($input: BillingPeriodInput!) {
+  upsertBillingPeriod(input: $input) {
+    ...PeriodFields
+  }
+}
+mutation AddMeterReading($input: MeterReadingInput!) {
+  addMeterReading(input: $input) {
+    ...MeterFields
+  }
+}
+mutation DeleteMeterReading($id: Int!) {
+  deleteMeterReading(id: $id)
+}
+mutation CreateAccountingPolicy($input: AccountingPolicyInput!) {
+  createAccountingPolicy(input: $input) {
+    policy {
+      ...PolicyFields
+    }
+    billingPeriodsInvalidated
+    outsideRetentionBefore
+    calculationRun {
+      ...RunFields
+    }
+  }
+}
+mutation CreateDataExclusion($input: DataExclusionInput!) {
+  createDataExclusion(input: $input) {
+    id
+    from
+    to
+    families
+    reason
+    createdAt
+    createdBy
+  }
+}
+mutation DeleteDataExclusion($id: Int!) {
+  deleteDataExclusion(id: $id)
+}
