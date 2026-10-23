@@ -1,0 +1,122 @@
+# house-solar: one Compose app for TrueNAS (Apps -> Discover -> ... -> Install via YAML).
+#
+# Substitute BEFORE installing (TrueNAS does no variable interpolation):
+#   POOL       your pool name, in every /mnt/POOL/... path
+#   0.1.0      the backend image tag (appears in `migrate` and `backend`; keep them identical)
+#   STICK_IP   the Hoymiles stick's wired IP (see docs/operations.md; with COLLECTOR_ENABLED=false it is unused)
+#   NAS_IP     the NAS address on your trusted LAN: the API is published ONLY on that address
+# In this YAML a literal `$` inside a command must be written `$$`.
+# Layout, ownership and the restore procedure: docs/operations.md.
+
+services:
+  db:
+    image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+    user: "999:999"
+    restart: unless-stopped
+    stop_grace_period: 60s
+    shm_size: 128m
+    mem_limit: 1g
+    environment:
+      POSTGRES_USER: solar
+      POSTGRES_DB: solar
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    # The server reaps dead client sessions (including a lingering advisory-lock session) in about a minute.
+    command:
+      - postgres
+      - -c
+      - tcp_keepalives_idle=30
+      - -c
+      - tcp_keepalives_interval=10
+      - -c
+      - tcp_keepalives_count=3
+    volumes:
+      - /mnt/POOL/apps/house-solar/pgdata:/var/lib/postgresql
+      - /mnt/POOL/apps/house-solar/backups:/backups:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solar -d solar"]
+      interval: 10s
+      retries: 6
+      start_period: 30s
+    networks: [internal]
+
+  migrate:
+    image: ghcr.io/captain-slow/house-solar-backend:0.1.0
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+    working_dir: /app
+    user: "568:568"
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://solar@db:5432/solar
+      DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      CHECKPOINT_DISABLE: "1"
+      PRISMA_HIDE_UPDATE_MESSAGE: "1"
+    # Compose grants secrets per service and does not inherit `backend`'s settings.
+    secrets: [db_password]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  backend:
+    image: ghcr.io/captain-slow/house-solar-backend:0.1.0
+    user: "568:568"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 512m
+    environment:
+      SITE_TIMEZONE: Asia/Kuala_Lumpur
+      TZ: UTC
+      DATABASE_URL: postgresql://solar@db:5432/solar
+      DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      DEVICE_KEY: inverter-1
+      EXPECTED_MODEL: HIT-10L-G3
+      # Enable only after G0-G2 pass and MODBUS_HOST is the verified wired stick IP.
+      COLLECTOR_ENABLED: "false"
+      MODBUS_HOST: STICK_IP
+      TLS_DIR: /data/tls
+      TLS_SUBJECT_ALT_NAMES: ""   # e.g. "192.168.50.20,solar.lan": the NAS address(es) the desktop app connects to
+      BACKUP_DIR: /backups
+    secrets: [db_password]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "NAS_IP:8443:8443"   # bound to the LAN address, not 0.0.0.0 (a second NIC/VLAN must not expose the API)
+    volumes:
+      - /mnt/POOL/apps/house-solar/tls:/data/tls
+      - /mnt/POOL/apps/house-solar/backups:/backups:ro
+    healthcheck:
+      test: ["CMD", "node", "dist/cli/healthcheck.js"]
+      interval: 30s
+    networks: [internal, lan]
+
+  db-backup:
+    image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+    user: "999:999"
+    restart: unless-stopped
+    stop_grace_period: 30s   # lets an in-flight dump be cancelled and cleaned up
+    environment:
+      TZ: Asia/Kuala_Lumpur
+    secrets: [db_password]
+    entrypoint: ["/scripts/backup.sh", "daemon"]
+    volumes:
+      - /mnt/POOL/apps/house-solar/backups:/backups
+      - /mnt/POOL/apps/house-solar/scripts:/scripts:ro
+    # Per-invocation password files live here and never touch disk.
+    tmpfs:
+      - /run/pg:mode=0700,uid=999,gid=999
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+networks:
+  internal:
+    internal: true   # no egress; the database is never published
+  lan: {}            # the published port plus Modbus egress
+
+secrets:
+  db_password:
+    file: /mnt/POOL/apps/house-solar/secrets/db_password

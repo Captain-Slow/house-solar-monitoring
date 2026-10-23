@@ -1,0 +1,62 @@
+# V19: the built image runs `prisma migrate deploy` with ONLY an internal network and the
+# db_password secret. Used by deploy/dev/verify-v19.sh; mirrors the migrate/backend wiring of
+# deploy/truenas/compose.yaml. Image: house-solar-backend:dev (docker build -f apps/backend/Dockerfile .).
+services:
+  db:
+    image: postgres:18.6-bookworm
+    environment:
+      POSTGRES_USER: solar
+      POSTGRES_DB: solar
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    networks: [internal]
+    tmpfs: ["/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solar -d solar"]
+      interval: 2s
+      retries: 30
+  migrate:
+    image: house-solar-backend:dev
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+    working_dir: /app
+    user: "568:568"
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://solar@db:5432/solar
+      DATABASE_PASSWORD_FILE: /run/secrets/app_password
+      CHECKPOINT_DISABLE: "1"
+      PRISMA_HIDE_UPDATE_MESSAGE: "1"
+    secrets: [app_password]
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [internal]
+  backend:
+    image: house-solar-backend:dev
+    user: "568:568"
+    init: true
+    restart: "no"
+    environment:
+      SITE_TIMEZONE: Asia/Kuala_Lumpur
+      DATABASE_URL: postgresql://solar@db:5432/solar
+      DATABASE_PASSWORD_FILE: /run/secrets/app_password
+      COLLECTOR_ENABLED: "false"
+      TLS_DIR: /tmp/tls
+      BACKUP_DIR: /tmp
+      TLS_SUBJECT_ALT_NAMES: localhost
+    secrets: [app_password]
+    tmpfs: ["/tmp"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "node", "dist/cli/healthcheck.js"]
+      interval: 3s
+      retries: 20
+secrets:
+  db_password:
+    file: ./.secrets/db_password
+  app_password:
+    file: ./.secrets/app_password
+networks:
+  internal:
+    internal: true

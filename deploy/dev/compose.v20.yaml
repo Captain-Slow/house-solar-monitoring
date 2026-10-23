@@ -1,0 +1,41 @@
+# V20: unattended backup authentication, exercising the REAL deploy/truenas/backup.sh against a
+# password-protected PostgreSQL. Used by deploy/dev/verify-v20.sh. Mirrors the `db` and `db-backup`
+# services of deploy/truenas/compose.yaml; /backups is a tmpfs owned 999:568 mode 0750 like the
+# `backups` dataset. BACKUP_TIME is set by the script to a minute from now.
+services:
+  db:
+    image: postgres:18.6-bookworm
+    user: "999:999"
+    environment:
+      POSTGRES_USER: solar
+      POSTGRES_DB: solar
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    tmpfs: ["/var/lib/postgresql:uid=999,gid=999,mode=0700"]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solar -d solar"]
+      interval: 2s
+      retries: 30
+  db-backup:
+    image: postgres:18.6-bookworm
+    user: "999:999"
+    environment:
+      TZ: UTC
+      BACKUP_TIME: ${BACKUP_TIME:?set by verify-v20.sh}
+    secrets: [db_password]
+    entrypoint: ["/scripts/backup.sh", "daemon"]
+    volumes:
+      - ../truenas:/scripts:ro
+    tmpfs:
+      - /run/pg:mode=0700,uid=999,gid=999
+      - /backups:uid=999,gid=568,mode=0750
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [internal]
+secrets:
+  db_password:
+    file: ${V20_SECRET_DIR:?set by verify-v20.sh}/db_password
+networks:
+  internal:
+    internal: true

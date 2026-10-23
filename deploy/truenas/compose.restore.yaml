@@ -1,0 +1,42 @@
+# house-solar-restore: TEMPORARY app used only for a production restore (docs/operations.md).
+# PostgreSQL alone: no migrate, no backend, no collector, no Modbus access, no published port.
+# Substitute POOL as in compose.yaml. Delete this app (keep pgdata) once the dump is restored.
+
+services:
+  db:
+    image: postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+    user: "999:999"
+    restart: "no"
+    stop_grace_period: 60s
+    shm_size: 128m
+    mem_limit: 1g
+    environment:
+      POSTGRES_USER: solar
+      POSTGRES_DB: solar
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    command:
+      - postgres
+      - -c
+      - tcp_keepalives_idle=30
+      - -c
+      - tcp_keepalives_interval=10
+      - -c
+      - tcp_keepalives_count=3
+    volumes:
+      - /mnt/POOL/apps/house-solar/pgdata:/var/lib/postgresql
+      - /mnt/POOL/apps/house-solar/backups:/backups:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solar -d solar"]
+      interval: 10s
+      retries: 6
+      start_period: 30s
+    networks: [internal]
+
+networks:
+  internal:
+    internal: true
+
+secrets:
+  db_password:
+    file: /mnt/POOL/apps/house-solar/secrets/db_password
