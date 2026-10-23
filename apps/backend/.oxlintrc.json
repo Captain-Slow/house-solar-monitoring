@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "typescript/no-explicit-any": "off",
+    "typescript/no-floating-promises": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "modbus-serial",
+            "message": "modbus-serial may only be imported by src/modbus/readonly-modbus-client.ts (and src/cli/replay-server.ts). Use ReadonlyModbusClient."
+          }
+        ],
+        "patterns": [{ "group": ["modbus-serial/*"], "message": "Use ReadonlyModbusClient." }]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/modbus/readonly-modbus-client.ts", "src/cli/replay-server.ts"],
+      "rules": { "no-restricted-imports": "off" }
+    }
+  ],
+  "env": {
+    "node": true
+  }
+}

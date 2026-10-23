@@ -1,0 +1,443 @@
+// Core schema (migration 0001_core). Later milestones add 0002_accounting and 0003_tariff.
+// Every instant is Timestamptz(3); energies are Wh, powers are W (Int); null means unknown, never zero.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DeviceRole {
+  INVERTER
+}
+
+enum PollTier {
+  DETECT
+  FAST
+  SLOW
+  SETTINGS
+}
+
+enum QualityEventKind {
+  GAP
+  DB_UNAVAILABLE
+  CONNECTION_LOST
+  METER_LINK_DOWN
+  METER_STALE
+  BLOCK_INVALID
+  COUNTER_RESET
+  COUNTER_JUMP_REJECTED
+  COUNTER_DISCONTINUITY
+  CLOCK_STEP
+  DEVICE_REPLACED
+  CAPABILITY_CHANGED
+  IDENTITY_MISMATCH
+  NEGATIVE_DERIVED_LOAD
+  BALANCE_ANOMALY
+  FAULT_ACTIVE
+  ACQUISITION_SOURCE_CHANGED
+  CLOUD_AUTH_FAILED
+}
+
+enum DirtyReason {
+  INGEST
+  EXCLUSION
+  RENORMALIZE
+  RECALC_REQUEST
+  CALC_PARAMS
+  ALGO_UPGRADE
+}
+
+enum CalcKind {
+  LEDGER_RECOMPUTE
+  RENORMALIZE
+  ALGO_UPGRADE
+  CALC_PARAMS_CHANGE
+  BILLING
+}
+
+enum MeterReadingSource {
+  UTILITY_METER_MANUAL
+  HOYMILES_METER_LCD
+}
+
+enum BillingStatus {
+  COMPLETE
+  ESTIMATED
+  UNAVAILABLE
+}
+
+enum TokenRole {
+  VIEWER
+  ADMIN
+}
+
+model DataSource {
+  id        Int      @id @default(autoincrement())
+  kind      String // "MODBUS_TCP"
+  endpoint  String // "<ip>:502#1"
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  devices   Device[]
+
+  @@unique([kind, endpoint])
+}
+
+model Device {
+  id                     Int        @id @default(autoincrement())
+  dataSourceId           Int
+  deviceKey              String // configured DEVICE_KEY
+  role                   DeviceRole
+  model                  String
+  // hasBattery, hasGridMeter, mpptCount, batteryCapacityKwh: live observations, never identity
+  observedCapabilities   Json
+  capabilitiesObservedAt DateTime   @db.Timestamptz(3)
+  firmware               Json
+  latestStatus           Json?
+  firstSeenAt            DateTime   @db.Timestamptz(3)
+  lastSeenAt             DateTime   @db.Timestamptz(3)
+  retiredAt              DateTime?  @db.Timestamptz(3)
+  replacementReason      String?
+
+  dataSource DataSource         @relation(fields: [dataSourceId], references: [id])
+  rawPolls   RawPoll[]
+  samples    Sample[]
+  events     DataQualityEvent[]
+
+  // The migration SQL adds a partial unique index on (dataSourceId, deviceKey) WHERE retiredAt IS NULL.
+  @@index([dataSourceId, retiredAt])
+}
+
+model CollectorRun {
+  id                 Int       @id @default(autoincrement())
+  startedAt          DateTime  @db.Timestamptz(3)
+  endedAt            DateTime? @db.Timestamptz(3)
+  appVersion         String
+  registerMapVersion String // "hoymiles-g3-modbus-tcp@78c620d+N"
+  endReason          String?
+
+  rawPolls RawPoll[]
+}
+
+model MappingVersion {
+  version     Int      @id
+  config      Json
+  provisional Boolean
+  note        String
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  samples Sample[]
+}
+
+model RawPoll {
+  id          BigInt   @id @default(autoincrement())
+  runId       Int
+  seq         Int
+  deviceId    Int
+  tier        PollTier
+  requestedAt DateTime @db.Timestamptz(3)
+  receivedAt  DateTime @db.Timestamptz(3)
+  observedAt  DateTime @db.Timestamptz(3)
+  // per block: fc u8, start u16, count u16, ok u8, words u16[] (see modbus/raw-poll-codec.ts)
+  blocks      Bytes
+  // Acquisition monotonic midpoint of a FAST poll in ms (migration 0004_raw_poll_monotonic).
+  // Only comparable within one runId (the collector process clock). NULL = captured before the
+  // column existed or not a FAST poll: timing is then unknown and must never be inferred from wall time.
+  monotonicMs Float?
+  // Immutable acquisition facts survive Sample retention and loss of a raw predecessor.
+  // NULL has the same legacy/non-FAST meaning as monotonicMs.
+  acquisitionClockStep      Boolean?
+  acquisitionMeterRepeatSec Int?
+  contentHash Bytes
+
+  run    CollectorRun @relation(fields: [runId], references: [id])
+  device Device       @relation(fields: [deviceId], references: [id])
+  sample Sample?
+
+  @@unique([runId, seq])
+  @@index([deviceId, observedAt])
+  @@index([deviceId, runId, seq])
+}
+
+model Sample {
+  id             BigInt   @id @default(autoincrement())
+  rawPollId      BigInt   @unique
+  deviceId       Int
+  observedAt     DateTime @db.Timestamptz(3)
+  mappingVersion Int
+
+  meterLink        Int?
+  gridW            Int?
+  gridAW           Int?
+  gridBW           Int?
+  gridCW           Int?
+  gridVoltA        Decimal? @db.Decimal(5, 1)
+  gridVoltB        Decimal? @db.Decimal(5, 1)
+  gridVoltC        Decimal? @db.Decimal(5, 1)
+  gridPortW        Int? // register 2165 as read
+  inverterAcW      Int?
+  epsW             Int?
+  pvW              Int?
+  pvStringW        Int[]
+  batteryW         Int?
+  batteryBmsW      Int?
+  batterySoc       Int?
+  batteryState     Int?
+  loadVendorW      Int?
+  loadVendorTotalW Int?
+
+  pvWh            BigInt?
+  gridBuyWh       BigInt?
+  gridSellWh      BigInt?
+  gridBuyPhaseWh  BigInt[]
+  gridSellPhaseWh BigInt[]
+  batChargeWh     BigInt?
+  batDischargeWh  BigInt?
+  loadUseWh       BigInt?
+  vendorToday     Json? // Wh
+
+  meterRepeatSec Int
+  flags          Int
+
+  rawPoll RawPoll        @relation(fields: [rawPollId], references: [id])
+  device  Device         @relation(fields: [deviceId], references: [id])
+  mapping MappingVersion @relation(fields: [mappingVersion], references: [version])
+
+  @@unique([deviceId, observedAt])
+  @@index([observedAt])
+}
+
+model DataQualityEvent {
+  id        BigInt           @id @default(autoincrement())
+  deviceId  Int?
+  kind      QualityEventKind
+  startedAt DateTime         @db.Timestamptz(3)
+  endedAt   DateTime?        @db.Timestamptz(3)
+  details   Json
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+
+  device Device? @relation(fields: [deviceId], references: [id])
+
+  @@index([kind, startedAt])
+}
+
+model LedgerDirtyRange {
+  id         BigInt      @id @default(autoincrement())
+  fromBucket DateTime    @db.Timestamptz(0)
+  toBucket   DateTime    @db.Timestamptz(0) // exclusive
+  reason     DirtyReason
+  createdAt  DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([fromBucket])
+}
+
+model ApiToken {
+  id         Int       @id @default(autoincrement())
+  name       String    @unique
+  role       TokenRole
+  tokenHash  Bytes     @unique
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  lastUsedAt DateTime? @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+}
+
+// ---- 0002_accounting -----------------------------------------------------------------------
+// One row per 5-minute UTC bucket. Wh columns are Decimal(12,3); null = unknown, never zero.
+
+model EnergyInterval {
+  bucketStart    DateTime @id @db.Timestamptz(0) // UTC, 300 s, epoch-aligned
+  calcVersion    Int
+  maxGapSecUsed  Int
+  mappingVersion Int
+  computedAt     DateTime @db.Timestamptz(3)
+
+  gridImportNetWh       Decimal? @db.Decimal(12, 3)
+  gridExportNetWh       Decimal? @db.Decimal(12, 3)
+  gridImportPhaseWh     Decimal? @db.Decimal(12, 3)
+  gridExportPhaseWh     Decimal? @db.Decimal(12, 3)
+  gridImportCounterWh   Decimal? @db.Decimal(12, 3)
+  gridExportCounterWh   Decimal? @db.Decimal(12, 3)
+  pvIntWh               Decimal? @db.Decimal(12, 3)
+  pvCounterWh           Decimal? @db.Decimal(12, 3)
+  batChargeIntWh        Decimal? @db.Decimal(12, 3)
+  batDischargeIntWh     Decimal? @db.Decimal(12, 3)
+  batChargeCounterWh    Decimal? @db.Decimal(12, 3)
+  batDischargeCounterWh Decimal? @db.Decimal(12, 3)
+  loadDerivedWh         Decimal? @db.Decimal(12, 3)
+  loadCounterWh         Decimal? @db.Decimal(12, 3)
+
+  gridCoveredSec      Int // 0..300
+  pvCoveredSec        Int
+  batCoveredSec       Int
+  loadCoveredSec      Int
+  // Independent block-1800 SOC observation-slot coverage; NULL = unavailable historical evidence.
+  socCoveredSec       Int?
+  // seconds with unknown counter energy, CounterKey order PV, GRID_BUY, GRID_SELL, BAT_CHARGE, BAT_DISCHARGE, LOAD_USE
+  counterUnknownSec   Int[]
+  counterGapAllocMask Int // bit i set: counter i has gap-allocated energy in this bucket
+  flags               Int // LedgerFlag bits (accounting/types.ts)
+  counterState        Json? // end-of-bucket per-counter state; seeds recovery
+
+  gridAvgW Int?
+  gridMinW Int?
+  gridMaxW Int?
+  pvAvgW   Int?
+  pvMaxW   Int?
+  batAvgW  Int?
+  loadAvgW Int?
+  loadMaxW Int?
+  socMin   Int?
+  socMax   Int?
+  socLast  Int?
+}
+
+model AccountingPolicy {
+  version             Int      @id @default(autoincrement())
+  effectiveFrom       DateTime @db.Timestamptz(3)
+  supersededByVersion Int?
+  // source selection: changing these never recomputes the ledger
+  gridSource          String // METER_NET | METER_PER_PHASE | INVERTER_COUNTER
+  pvSource            String // COUNTER | INTEGRATED
+  batterySource       String // COUNTER | INTEGRATED
+  loadSource          String // DERIVED | VENDOR_COUNTER
+  // calculation parameter: changing it recomputes integrations, coverage and counter allocation
+  maxGapSec           Int
+  validated           Json // { grid: bool, pv: bool, ... } from G5/G6
+  note                String
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model DataExclusion {
+  id        Int      @id @default(autoincrement())
+  from      DateTime @db.Timestamptz(3)
+  to        DateTime @db.Timestamptz(3)
+  families  String[] // GRID PV BATTERY LOAD ALL
+  reason    String
+  createdBy String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([from, to])
+}
+
+model CalculationRun {
+  id             Int       @id @default(autoincrement())
+  kind           CalcKind
+  reason         String
+  rangeStart     DateTime  @db.Timestamptz(3)
+  rangeEnd       DateTime  @db.Timestamptz(3)
+  calcVersion    Int
+  mappingVersion Int
+  startedAt      DateTime  @db.Timestamptz(3)
+  finishedAt     DateTime? @db.Timestamptz(3)
+  status         String // RUNNING | DONE | FAILED
+  error          String?
+}
+
+model MeterReading {
+  id               Int                @id @default(autoincrement())
+  readAt           DateTime           @db.Timestamptz(3)
+  importKwh        Decimal            @db.Decimal(12, 3)
+  exportKwh        Decimal?           @db.Decimal(12, 3)
+  importPeakKwh    Decimal?           @db.Decimal(12, 3)
+  importOffpeakKwh Decimal?           @db.Decimal(12, 3)
+  resolutionKwh    Decimal            @default(1) @db.Decimal(6, 3)
+  source           MeterReadingSource
+  note             String?
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@unique([readAt, source])
+}
+
+// ---- 0003_tariff ---------------------------------------------------------------------------
+// Money is Decimal(12,2); rates live as decimal strings inside the rules JSON (Decimal(12,6) for
+// monthly rates). Nothing here asserts real TNB values: rules come from the user's bill.
+
+model Tariff {
+  id       Int    @id @default(autoincrement())
+  name     String
+  currency String @db.Char(3)
+  timezone String
+
+  versions     TariffVersion[]
+  holidays     TariffHoliday[]
+  monthlyRates TariffMonthlyRate[]
+  periods      BillingPeriod[]
+}
+
+model TariffVersion {
+  id                 Int       @id @default(autoincrement())
+  tariffId           Int
+  effectiveFrom      DateTime  @db.Date
+  effectiveTo        DateTime? @db.Date
+  rulesSchemaVersion Int
+  rules              Json
+  sourceNote         String
+  billVerified       Boolean   @default(false)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(3)
+
+  tariff Tariff @relation(fields: [tariffId], references: [id])
+
+  @@index([tariffId, effectiveFrom])
+}
+
+model TariffHoliday {
+  tariffId Int
+  date     DateTime @db.Date
+  name     String
+
+  tariff Tariff @relation(fields: [tariffId], references: [id])
+
+  @@id([tariffId, date])
+}
+
+model TariffMonthlyRate {
+  tariffId      Int
+  componentCode String
+  month         String  @db.Char(7) // YYYY-MM
+  ratePerKwh    Decimal @db.Decimal(12, 6)
+  sourceNote    String
+
+  tariff Tariff @relation(fields: [tariffId], references: [id])
+
+  @@id([tariffId, componentCode, month])
+}
+
+model BillingPeriod {
+  id                Int      @id @default(autoincrement())
+  tariffId          Int
+  startDate         DateTime @db.Date
+  endDate           DateTime @db.Date // inclusive
+  // independent anchor from a bill: [{originStart:"YYYY-MM-DD", kwh:"12.000"}]; null = chain from the previous period
+  openingCreditLots Json?
+  bill              Json? // printed quantities + lines (redacted: no account number or address)
+  note              String?
+
+  tariff Tariff               @relation(fields: [tariffId], references: [id])
+  result BillingPeriodResult?
+
+  @@unique([tariffId, startDate])
+}
+
+model BillingPeriodResult {
+  billingPeriodId  Int           @id
+  computedAt       DateTime      @db.Timestamptz(3)
+  calcVersion      Int
+  mappingVersion   Int
+  policyVersions   Int[]
+  tariffVersionIds Int[]
+  quantities       Json
+  lineItems        Json
+  nem              Json // openingLots, expiredLots, consumedLots, closingLots; each lot keeps its originStart
+  subtotal         Decimal?      @db.Decimal(12, 2)
+  total            Decimal?      @db.Decimal(12, 2)
+  status           BillingStatus
+  reasons          String[]
+  isLowerBound     Boolean // true only under the Pricing step 6 conditions
+  coverage         Decimal       @db.Decimal(5, 4)
+
+  period BillingPeriod @relation(fields: [billingPeriodId], references: [id], onDelete: Cascade)
+}
