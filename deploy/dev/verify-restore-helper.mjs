@@ -289,18 +289,27 @@ async function assertLegacy(tx = prisma) {
     288,
     "0005 must not invent SOC coverage from power coverage or extrema",
   );
+  assert.equal(
+    await tx.energyInterval.count({
+      where: { gridPhaseCoveredSec: null, gridCoveredSec: 300 },
+    }),
+    288,
+    "0006 must not invent METER_PER_PHASE coverage from meter-total coverage",
+  );
 }
 
 async function enrichCurrent() {
-  // Current-schema backup must also defend populated 0004/0005 fields.
+  // Current-schema backup must also defend populated 0004/0005/0006 fields.
   await prisma.$transaction(async (tx) => {
     await assertLegacy(tx);
     await tx.$executeRaw`UPDATE "RawPoll" SET "monotonicMs" = seq * 10000.0,
       "acquisitionClockStep" = false, "acquisitionMeterRepeatSec" = 0`;
-    await tx.energyInterval.updateMany({ data: { socCoveredSec: 200 } });
+    await tx.energyInterval.updateMany({
+      data: { socCoveredSec: 200, gridPhaseCoveredSec: 250 },
+    });
   });
   console.log(
-    "Current fixture: 8641 populated acquisition facts; 288 SOC coverage=200 vs battery coverage=300",
+    "Current fixture: 8641 populated acquisition facts; 288 SOC coverage=200 vs battery coverage=300; 288 phase coverage=250 vs meter-total coverage=300",
   );
 }
 
@@ -385,7 +394,7 @@ try {
       prisma = new PrismaService();
       await assertLegacy();
       console.log(
-        "Historical NULL acquisition/SOC coverage and SOC extrema preserved",
+        "Historical NULL acquisition/SOC/phase coverage and SOC extrema preserved",
       );
       break;
     case "enrich-current":

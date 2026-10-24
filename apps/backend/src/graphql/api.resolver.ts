@@ -3,6 +3,11 @@ import { Args, Context, Int, Query, Resolver } from '@nestjs/graphql';
 import { GraphQLDateTime } from 'graphql-scalars';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import {
+  accountingStart,
+  effectivePolicyVersion,
+} from '../accounting/policy.js';
+import { LEDGER_ALGO_VERSION } from '../accounting/types.js';
 import type { AuthRequest } from '../auth/token.middleware.js';
 import { deviceActiveAt } from '../collector/identity.js';
 import {
@@ -284,30 +289,29 @@ export class ApiResolver {
   async collectorStatus(): Promise<CollectorStatus> {
     const snapshot = this.collector.snapshot();
     const serverTime = new Date();
-    const [device, mapping, earliest, backup] = await Promise.all([
-      this.activeDeviceAt(serverTime),
-      this.prisma.mappingVersion.findFirst({
-        orderBy: { version: 'desc' },
-        select: { version: true },
-      }),
-      this.prisma.sample.findFirst({
-        orderBy: { observedAt: 'asc' },
-        select: { observedAt: true },
-      }),
-      // The timestamp is advisory: a missing or unreadable file (no backup yet, a permissions
-      // mistake on the backups dataset) means "unknown", and must not fail collectorStatus.
-      readFile(join(this.env.BACKUP_DIR, 'last-success'), 'utf8').catch(
-        () => null,
-      ),
-    ]);
+    const [device, mapping, policyVersion, monitoringSince, backup] =
+      await Promise.all([
+        this.activeDeviceAt(serverTime),
+        this.prisma.mappingVersion.findFirst({
+          orderBy: { version: 'desc' },
+          select: { version: true },
+        }),
+        effectivePolicyVersion(this.prisma, serverTime),
+        accountingStart(this.prisma),
+        // The timestamp is advisory: a missing or unreadable file (no backup yet, a permissions
+        // mistake on the backups dataset) means "unknown", and must not fail collectorStatus.
+        readFile(join(this.env.BACKUP_DIR, 'last-success'), 'utf8').catch(
+          () => null,
+        ),
+      ]);
     const parsedBackup = backup ? new Date(backup.trim()) : null;
     return {
       ...snapshot,
       device,
       mappingVersion: mapping?.version ?? 0,
-      policyVersion: 0,
-      calcVersion: 0,
-      monitoringSince: earliest?.observedAt ?? null,
+      policyVersion,
+      calcVersion: LEDGER_ALGO_VERSION,
+      monitoringSince,
       siteTimezone: this.env.SITE_TIMEZONE,
       lastBackupAt:
         parsedBackup && !Number.isNaN(parsedBackup.getTime())

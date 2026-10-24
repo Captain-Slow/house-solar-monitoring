@@ -505,4 +505,106 @@ describe('meter reconciliation', () => {
     )!;
     expect(candidate.import.oursKwh?.toFixed(3)).toBe('0.100');
   });
+  it('derives each meter candidate coverage from its own ledger column', async () => {
+    const day = 10 * 86_400;
+    const net = { gridImportNetWh: '10.000', gridExportNetWh: '1.000' };
+    const phase = { gridImportPhaseWh: '10.000', gridExportPhaseWh: '1.000' };
+    const cases: Array<{
+      name: string;
+      values: Record<string, string | number | null>;
+      netCoverage: number;
+      phaseCoverage: number;
+      phaseImportKwh: string | null;
+    }> = [
+      {
+        // Meter total (1814) unavailable, all three phases valid.
+        name: 'total missing, phases valid',
+        values: { gridCoveredSec: 0, gridPhaseCoveredSec: 300, ...phase },
+        netCoverage: 0,
+        phaseCoverage: 1,
+        phaseImportKwh: '0.050',
+      },
+      {
+        // Total valid all bucket, phases valid half of it: PER_PHASE must not borrow the total.
+        name: 'phases valid for half of a fully covered total',
+        values: {
+          gridCoveredSec: 300,
+          gridPhaseCoveredSec: 150,
+          ...net,
+          ...phase,
+        },
+        netCoverage: 1,
+        phaseCoverage: 0.5,
+        phaseImportKwh: '0.050',
+      },
+      {
+        // Historical row: NULL phase coverage falls back to the meter-total coverage.
+        name: 'historical NULL phase coverage',
+        values: { gridCoveredSec: 150, ...net, ...phase },
+        netCoverage: 0.5,
+        phaseCoverage: 0.5,
+        phaseImportKwh: '0.050',
+      },
+      {
+        // Total valid, a phase missing: there is no PER_PHASE energy to cover.
+        name: 'total valid, phase missing',
+        values: { gridCoveredSec: 300, gridPhaseCoveredSec: 0, ...net },
+        netCoverage: 1,
+        phaseCoverage: 0,
+        phaseImportKwh: '0.000',
+      },
+    ];
+    for (const [index, item] of cases.entries()) {
+      const start = day + index * 3600;
+      await prisma.energyInterval.createMany({
+        data: Array.from({ length: 5 }, (_, i) => ({
+          bucketStart: date(start + i * 300),
+          calcVersion: 1,
+          maxGapSecUsed: 30,
+          mappingVersion: 1,
+          computedAt: date(start),
+          gridCoveredSec: 0,
+          pvCoveredSec: 0,
+          batCoveredSec: 0,
+          loadCoveredSec: 0,
+          counterUnknownSec: [300, 300, 300, 300, 300, 300],
+          counterGapAllocMask: 0,
+          flags: 0,
+          ...item.values,
+        })),
+      });
+      const from = await prisma.meterReading.create({
+        data: {
+          readAt: date(start),
+          source: 'HOYMILES_METER_LCD',
+          importKwh: '0.000',
+          resolutionKwh: '0.001',
+        },
+      });
+      const to = await prisma.meterReading.create({
+        data: {
+          readAt: date(start + 1500),
+          source: 'HOYMILES_METER_LCD',
+          importKwh: '0.050',
+          resolutionKwh: '0.001',
+        },
+      });
+      const result = await service.reconcile(from.id, to.id);
+      const phase = result.candidates.find(
+        (entry) => entry.source === 'METER_PER_PHASE',
+      )!;
+      const total = result.candidates.find(
+        (entry) => entry.source === 'METER_NET',
+      )!;
+      expect(total.coverage.toNumber(), `${item.name}: METER_NET`).toBe(
+        item.netCoverage,
+      );
+      expect(phase.coverage.toNumber(), `${item.name}: METER_PER_PHASE`).toBe(
+        item.phaseCoverage,
+      );
+      expect(phase.import.oursKwh?.toFixed(3), item.name).toBe(
+        item.phaseImportKwh,
+      );
+    }
+  });
 });

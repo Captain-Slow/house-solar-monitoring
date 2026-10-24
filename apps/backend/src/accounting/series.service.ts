@@ -7,6 +7,7 @@ import type { Env } from '../config/env.js';
 import { SampleFlag } from '../collector/types.js';
 import { batteryInvalidMask } from './families.js';
 import { BUCKET_MS } from './types.js';
+import { selectSeriesGrid } from './series-grid.js';
 import { accountingInputError } from './totals.service.js';
 
 export type PowerMetric =
@@ -39,17 +40,6 @@ export interface PowerSeries {
   bucketSeconds: number;
   series: MetricSeries[];
   gaps: TimeRange[];
-}
-export const SERIES_WIDTHS = [
-  10, 30, 60, 300, 900, 3600, 10800, 86400,
-] as const;
-export function selectSeriesWidth(
-  spanSeconds: number,
-  maxPoints: number,
-): number {
-  return (
-    SERIES_WIDTHS.find((width) => width >= spanSeconds / maxPoints) ?? 86400
-  );
 }
 
 const SAMPLE_ONLY = new Set<PowerMetric>([
@@ -100,6 +90,7 @@ export class SeriesService {
     from: Date,
     to: Date,
     step: number,
+    anchor: number,
   ): Promise<Map<number, Stats>> {
     const field = Prisma.raw(`s."${SAMPLE_COLUMNS[metric]}"`);
     const invalid =
@@ -148,7 +139,7 @@ export class SeriesService {
       SELECT bucket, (SUM(avg * n) / SUM(n))::float8 AS avg, MIN(min)::float8 AS min, MAX(max)::float8 AS max,
         (SUM(LEAST(slot + 10000, bucket + ${step}, ${toMs}) - GREATEST(slot, ${fromMs}))/1000.0) AS covered
       FROM (
-        SELECT (floor(extract(epoch from s."observedAt") * 1000 / ${step})::bigint * ${step}) AS bucket,
+        SELECT (${anchor} + floor((extract(epoch from s."observedAt") * 1000 - ${anchor}) / ${step})::bigint * ${step}) AS bucket,
           (floor(extract(epoch from s."observedAt") / 10)::bigint * 10000) AS slot,
           AVG(${value}) AS avg, MIN(${value}) AS min, MAX(${value}) AS max, COUNT(*) AS n
         FROM "Sample" s ${join}
@@ -200,10 +191,13 @@ export class SeriesService {
     )
       accountingInputError('Invalid power series range, metrics or maxPoints');
     metrics = [...new Set(metrics)];
-    const width = selectSeriesWidth(duration / 1000, maxPoints),
+    const {
+        widthSeconds: width,
+        anchorMs,
+        firstMs: first,
+        count,
+      } = selectSeriesGrid(from.getTime(), to.getTime(), maxPoints),
       step = width * 1000;
-    const first = Math.floor(from.getTime() / step) * step;
-    const count = Math.ceil((to.getTime() - first) / step);
     const sampleMode = width < 300;
     const retentionFrom = new Date(
       Math.max(
@@ -219,7 +213,7 @@ export class SeriesService {
         sampleMetrics.map((m) =>
           retentionFrom >= to
             ? Promise.resolve(new Map<number, Stats>())
-            : this.sampleStatistics(m, retentionFrom, to, step),
+            : this.sampleStatistics(m, retentionFrom, to, step, anchorMs),
         ),
       ),
       sampleMode
@@ -260,7 +254,9 @@ export class SeriesService {
     );
     const intervalGroups = new Map<number, NonNullable<typeof intervals>>();
     for (const row of intervals ?? []) {
-      const key = Math.floor(row.bucketStart.getTime() / step) * step;
+      const key =
+        anchorMs +
+        Math.floor((row.bucketStart.getTime() - anchorMs) / step) * step;
       const group = intervalGroups.get(key);
       if (group) group.push(row);
       else intervalGroups.set(key, [row]);

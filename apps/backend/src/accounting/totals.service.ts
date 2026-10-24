@@ -13,7 +13,8 @@ import {
   LedgerFlag,
   type PolicySegment,
 } from './types.js';
-import { selectSegment } from './policy.js';
+import { gridMeterCoveredSec } from './families.js';
+import { accountingStart, selectSegment } from './policy.js';
 import { parseRules, type TariffRulesV1 } from '../tariff/rules.schema.js';
 import { windowFor } from '../tariff/tou.js';
 
@@ -154,10 +155,11 @@ function sourceFor(policy: PolicySegment, quantity: Quantity) {
     source === 'VENDOR_COUNTER' ||
     source === 'INVERTER_COUNTER';
   const index = counter ? COUNTER_INDEX[quantity] : -1;
+  // The grid family's coverage depends on the selected candidate (see gridMeterCoveredSec).
   const coverageField:
-    'gridCoveredSec' | 'pvCoveredSec' | 'batCoveredSec' | 'loadCoveredSec' =
+    'pvCoveredSec' | 'batCoveredSec' | 'loadCoveredSec' | null =
     family === 'grid'
-      ? 'gridCoveredSec'
+      ? null
       : family === 'pv'
         ? 'pvCoveredSec'
         : family === 'battery'
@@ -252,7 +254,15 @@ function valueFor(
         covered += Math.max(0, overlap - unknown);
         if (row.counterGapAllocMask & (1 << choice.index)) estimated = true;
       } else
-        covered += Math.min(overlap, Math.max(0, row[choice.coverageField]));
+        covered += Math.min(
+          overlap,
+          Math.max(
+            0,
+            choice.coverageField === null
+              ? gridMeterCoveredSec(row, choice.source)
+              : row[choice.coverageField],
+          ),
+        );
     }
     for (const [name, bit] of FLAG_ENTRIES)
       if (name !== 'STALE_CALC_PARAMS' && row.flags & bit) flags.add(name);
@@ -564,8 +574,8 @@ export class TotalsService {
       accountingInputError('tariffId must be a positive integer');
     const startUtc = from.toJSDate(),
       endUtc = end.toJSDate();
-    const [intervals, policyRows, seeded, earliest, latest] = await Promise.all(
-      [
+    const [intervals, policyRows, policyStart, earliest, latest] =
+      await Promise.all([
         this.prisma.energyInterval.findMany({
           where: { bucketStart: { gte: startUtc, lt: endUtc } },
           orderBy: { bucketStart: 'asc' },
@@ -574,10 +584,7 @@ export class TotalsService {
           where: { supersededByVersion: null, effectiveFrom: { lt: endUtc } },
           orderBy: { effectiveFrom: 'asc' },
         }),
-        this.prisma.accountingPolicy.findFirst({
-          orderBy: { effectiveFrom: 'asc' },
-          select: { effectiveFrom: true },
-        }),
+        accountingStart(this.prisma),
         this.prisma.sample.findFirst({
           orderBy: { observedAt: 'asc' },
           select: { observedAt: true },
@@ -586,10 +593,8 @@ export class TotalsService {
           orderBy: { observedAt: 'desc' },
           select: { observedAt: true },
         }),
-      ],
-    );
-    const monitoringSince =
-      seeded?.effectiveFrom ?? earliest?.observedAt ?? null;
+      ]);
+    const monitoringSince = policyStart ?? earliest?.observedAt ?? null;
     const policies: PolicySegment[] = policyRows.map((p) => ({
       ...p,
       gridSource: p.gridSource as PolicySegment['gridSource'],

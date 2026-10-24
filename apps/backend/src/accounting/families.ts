@@ -68,6 +68,21 @@ export function familyPowers(sample: LedgerSample): {
   };
 }
 
+/**
+ * Covered seconds of a stored meter grid candidate. METER_PER_PHASE has its own all-three-phases coverage;
+ * every other meter source uses the meter-total coverage. `gridPhaseCoveredSec` is NULL for rows stored
+ * before migration 0006, whose phase coverage is unknown: they keep the meter-total coverage they were
+ * always reported with. INVERTER_COUNTER coverage is `counterUnknownSec`, never this helper.
+ */
+export function gridMeterCoveredSec(
+  row: { gridCoveredSec: number; gridPhaseCoveredSec: number | null },
+  source: string,
+): number {
+  return source === 'METER_PER_PHASE'
+    ? (row.gridPhaseCoveredSec ?? row.gridCoveredSec)
+    : row.gridCoveredSec;
+}
+
 export function isExcluded(
   family: ExclusionFamily,
   tMs0: number,

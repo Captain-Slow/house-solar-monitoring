@@ -123,7 +123,7 @@ YAML
 
 img=postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
 old_migs=0001_core,0002_accounting
-current_migs="$old_migs,0003_tariff,0004_raw_poll_monotonic,0005_soc_coverage"
+current_migs="$old_migs,0003_tariff,0004_raw_poll_monotonic,0005_soc_coverage,0006_grid_phase_coverage"
 SQL() { docker exec "$1" psql -X -v ON_ERROR_STOP=1 -U solar -d "${3:-solar}" -Atc "$2"; }
 MIGS() { SQL "$1" 'select string_agg(migration_name, chr(44) order by migration_name) from _prisma_migrations where finished_at is not null and rolled_back_at is null'; }
 assert_volume_absent() {
@@ -178,7 +178,7 @@ tariff_objects() {
 }
 telemetry() {
   local raw_remove="'monotonicMs','acquisitionClockStep','acquisitionMeterRepeatSec'"
-  local energy_remove="'socCoveredSec'"
+  local energy_remove="'socCoveredSec','gridPhaseCoveredSec'"
   if [ "${2:-legacy}" = current ]; then raw_remove=""; energy_remove=""; fi
   SQL "$1" "select json_build_object(
     'RawPoll', (select count(*) from \"RawPoll\"),
@@ -235,12 +235,13 @@ restore() {
 assert_pending_migrations() {
   local logfile=$1 applied expected
   applied="$(sed -n 's/^Applying migration `\([^`]*\)`.*$/\1/p' "$logfile")"
-  expected=$'0003_tariff\n0004_raw_poll_monotonic\n0005_soc_coverage'
+  expected=$'0003_tariff\n0004_raw_poll_monotonic\n0005_soc_coverage\n0006_grid_phase_coverage'
   [ "$applied" = "$expected" ] || fail "expected pending migrations $expected, got: $applied"
   [ "$(MIGS "$DB")" = "$current_migs" ] || fail 'migration history does not match the current schema'
   [ "$(tariff_objects "$DB")" -gt 0 ] || fail 'real tariff migration objects missing'
   [ "$(SQL "$DB" "SELECT count(*) FROM information_schema.columns WHERE table_name='RawPoll' AND column_name IN ('monotonicMs','acquisitionClockStep','acquisitionMeterRepeatSec')")" = 3 ] || fail 'raw acquisition timing columns missing'
   [ "$(SQL "$DB" "SELECT count(*) FROM information_schema.columns WHERE table_name='EnergyInterval' AND column_name='socCoveredSec' AND is_nullable='YES' AND data_type='integer'")" = 1 ] || fail 'nullable independent SOC coverage column missing'
+  [ "$(SQL "$DB" "SELECT count(*) FROM information_schema.columns WHERE table_name='EnergyInterval' AND column_name='gridPhaseCoveredSec' AND is_nullable='YES' AND data_type='integer'")" = 1 ] || fail 'nullable METER_PER_PHASE coverage column missing'
   echo "Pending migration sequence verified: $current_migs"
 }
 

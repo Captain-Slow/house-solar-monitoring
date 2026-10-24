@@ -45,6 +45,7 @@ export type EnergyIntervalAvgAggregateOutputType = {
   loadDerivedWh: runtime.Decimal | null
   loadCounterWh: runtime.Decimal | null
   gridCoveredSec: number | null
+  gridPhaseCoveredSec: number | null
   pvCoveredSec: number | null
   batCoveredSec: number | null
   loadCoveredSec: number | null
@@ -84,6 +85,7 @@ export type EnergyIntervalSumAggregateOutputType = {
   loadDerivedWh: runtime.Decimal | null
   loadCounterWh: runtime.Decimal | null
   gridCoveredSec: number | null
+  gridPhaseCoveredSec: number | null
   pvCoveredSec: number | null
   batCoveredSec: number | null
   loadCoveredSec: number | null
@@ -125,6 +127,7 @@ export type EnergyIntervalMinAggregateOutputType = {
   loadDerivedWh: runtime.Decimal | null
   loadCounterWh: runtime.Decimal | null
   gridCoveredSec: number | null
+  gridPhaseCoveredSec: number | null
   pvCoveredSec: number | null
   batCoveredSec: number | null
   loadCoveredSec: number | null
@@ -165,6 +168,7 @@ export type EnergyIntervalMaxAggregateOutputType = {
   loadDerivedWh: runtime.Decimal | null
   loadCounterWh: runtime.Decimal | null
   gridCoveredSec: number | null
+  gridPhaseCoveredSec: number | null
   pvCoveredSec: number | null
   batCoveredSec: number | null
   loadCoveredSec: number | null
@@ -205,6 +209,7 @@ export type EnergyIntervalCountAggregateOutputType = {
   loadDerivedWh: number
   loadCounterWh: number
   gridCoveredSec: number
+  gridPhaseCoveredSec: number
   pvCoveredSec: number
   batCoveredSec: number
   loadCoveredSec: number
@@ -247,6 +252,7 @@ export type EnergyIntervalAvgAggregateInputType = {
   loadDerivedWh?: true
   loadCounterWh?: true
   gridCoveredSec?: true
+  gridPhaseCoveredSec?: true
   pvCoveredSec?: true
   batCoveredSec?: true
   loadCoveredSec?: true
@@ -286,6 +292,7 @@ export type EnergyIntervalSumAggregateInputType = {
   loadDerivedWh?: true
   loadCounterWh?: true
   gridCoveredSec?: true
+  gridPhaseCoveredSec?: true
   pvCoveredSec?: true
   batCoveredSec?: true
   loadCoveredSec?: true
@@ -327,6 +334,7 @@ export type EnergyIntervalMinAggregateInputType = {
   loadDerivedWh?: true
   loadCounterWh?: true
   gridCoveredSec?: true
+  gridPhaseCoveredSec?: true
   pvCoveredSec?: true
   batCoveredSec?: true
   loadCoveredSec?: true
@@ -367,6 +375,7 @@ export type EnergyIntervalMaxAggregateInputType = {
   loadDerivedWh?: true
   loadCounterWh?: true
   gridCoveredSec?: true
+  gridPhaseCoveredSec?: true
   pvCoveredSec?: true
   batCoveredSec?: true
   loadCoveredSec?: true
@@ -407,6 +416,7 @@ export type EnergyIntervalCountAggregateInputType = {
   loadDerivedWh?: true
   loadCounterWh?: true
   gridCoveredSec?: true
+  gridPhaseCoveredSec?: true
   pvCoveredSec?: true
   batCoveredSec?: true
   loadCoveredSec?: true
@@ -536,6 +546,7 @@ export type EnergyIntervalGroupByOutputType = {
   loadDerivedWh: runtime.Decimal | null
   loadCounterWh: runtime.Decimal | null
   gridCoveredSec: number
+  gridPhaseCoveredSec: number | null
   pvCoveredSec: number
   batCoveredSec: number
   loadCoveredSec: number
@@ -601,6 +612,7 @@ export type EnergyIntervalWhereInput = {
   loadDerivedWh?: Prisma.DecimalNullableFilter<"EnergyInterval"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: Prisma.DecimalNullableFilter<"EnergyInterval"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec?: Prisma.IntFilter<"EnergyInterval"> | number
+  gridPhaseCoveredSec?: Prisma.IntNullableFilter<"EnergyInterval"> | number | null
   pvCoveredSec?: Prisma.IntFilter<"EnergyInterval"> | number
   batCoveredSec?: Prisma.IntFilter<"EnergyInterval"> | number
   loadCoveredSec?: Prisma.IntFilter<"EnergyInterval"> | number
@@ -643,6 +655,7 @@ export type EnergyIntervalOrderByWithRelationInput = {
   loadDerivedWh?: Prisma.SortOrderInput | Prisma.SortOrder
   loadCounterWh?: Prisma.SortOrderInput | Prisma.SortOrder
   gridCoveredSec?: Prisma.SortOrder
+  gridPhaseCoveredSec?: Prisma.SortOrderInput | Prisma.SortOrder
   pvCoveredSec?: Prisma.SortOrder
   batCoveredSec?: Prisma.SortOrder
   loadCoveredSec?: Prisma.SortOrder
@@ -688,6 +701,7 @@ export type EnergyIntervalWhereUniqueInput = Prisma.AtLeast<{
   loadDerivedWh?: Prisma.DecimalNullableFilter<"EnergyInterval"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: Prisma.DecimalNullableFilter<"EnergyInterval"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec?: Prisma.IntFilter<"EnergyInterval"> | number
+  gridPhaseCoveredSec?: Prisma.IntNullableFilter<"EnergyInterval"> | number | null
   pvCoveredSec?: Prisma.IntFilter<"EnergyInterval"> | number
   batCoveredSec?: Prisma.IntFilter<"EnergyInterval"> | number
   loadCoveredSec?: Prisma.IntFilter<"EnergyInterval"> | number
@@ -730,6 +744,7 @@ export type EnergyIntervalOrderByWithAggregationInput = {
   loadDerivedWh?: Prisma.SortOrderInput | Prisma.SortOrder
   loadCounterWh?: Prisma.SortOrderInput | Prisma.SortOrder
   gridCoveredSec?: Prisma.SortOrder
+  gridPhaseCoveredSec?: Prisma.SortOrderInput | Prisma.SortOrder
   pvCoveredSec?: Prisma.SortOrder
   batCoveredSec?: Prisma.SortOrder
   loadCoveredSec?: Prisma.SortOrder
@@ -780,6 +795,7 @@ export type EnergyIntervalScalarWhereWithAggregatesInput = {
   loadDerivedWh?: Prisma.DecimalNullableWithAggregatesFilter<"EnergyInterval"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: Prisma.DecimalNullableWithAggregatesFilter<"EnergyInterval"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec?: Prisma.IntWithAggregatesFilter<"EnergyInterval"> | number
+  gridPhaseCoveredSec?: Prisma.IntNullableWithAggregatesFilter<"EnergyInterval"> | number | null
   pvCoveredSec?: Prisma.IntWithAggregatesFilter<"EnergyInterval"> | number
   batCoveredSec?: Prisma.IntWithAggregatesFilter<"EnergyInterval"> | number
   loadCoveredSec?: Prisma.IntWithAggregatesFilter<"EnergyInterval"> | number
@@ -822,6 +838,7 @@ export type EnergyIntervalCreateInput = {
   loadDerivedWh?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec: number
+  gridPhaseCoveredSec?: number | null
   pvCoveredSec: number
   batCoveredSec: number
   loadCoveredSec: number
@@ -864,6 +881,7 @@ export type EnergyIntervalUncheckedCreateInput = {
   loadDerivedWh?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec: number
+  gridPhaseCoveredSec?: number | null
   pvCoveredSec: number
   batCoveredSec: number
   loadCoveredSec: number
@@ -906,6 +924,7 @@ export type EnergyIntervalUpdateInput = {
   loadDerivedWh?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
+  gridPhaseCoveredSec?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   pvCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
   batCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
   loadCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
@@ -948,6 +967,7 @@ export type EnergyIntervalUncheckedUpdateInput = {
   loadDerivedWh?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
+  gridPhaseCoveredSec?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   pvCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
   batCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
   loadCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
@@ -990,6 +1010,7 @@ export type EnergyIntervalCreateManyInput = {
   loadDerivedWh?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec: number
+  gridPhaseCoveredSec?: number | null
   pvCoveredSec: number
   batCoveredSec: number
   loadCoveredSec: number
@@ -1032,6 +1053,7 @@ export type EnergyIntervalUpdateManyMutationInput = {
   loadDerivedWh?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
+  gridPhaseCoveredSec?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   pvCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
   batCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
   loadCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1074,6 +1096,7 @@ export type EnergyIntervalUncheckedUpdateManyInput = {
   loadDerivedWh?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   loadCounterWh?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
   gridCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
+  gridPhaseCoveredSec?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   pvCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
   batCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
   loadCoveredSec?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1116,6 +1139,7 @@ export type EnergyIntervalCountOrderByAggregateInput = {
   loadDerivedWh?: Prisma.SortOrder
   loadCounterWh?: Prisma.SortOrder
   gridCoveredSec?: Prisma.SortOrder
+  gridPhaseCoveredSec?: Prisma.SortOrder
   pvCoveredSec?: Prisma.SortOrder
   batCoveredSec?: Prisma.SortOrder
   loadCoveredSec?: Prisma.SortOrder
@@ -1156,6 +1180,7 @@ export type EnergyIntervalAvgOrderByAggregateInput = {
   loadDerivedWh?: Prisma.SortOrder
   loadCounterWh?: Prisma.SortOrder
   gridCoveredSec?: Prisma.SortOrder
+  gridPhaseCoveredSec?: Prisma.SortOrder
   pvCoveredSec?: Prisma.SortOrder
   batCoveredSec?: Prisma.SortOrder
   loadCoveredSec?: Prisma.SortOrder
@@ -1197,6 +1222,7 @@ export type EnergyIntervalMaxOrderByAggregateInput = {
   loadDerivedWh?: Prisma.SortOrder
   loadCounterWh?: Prisma.SortOrder
   gridCoveredSec?: Prisma.SortOrder
+  gridPhaseCoveredSec?: Prisma.SortOrder
   pvCoveredSec?: Prisma.SortOrder
   batCoveredSec?: Prisma.SortOrder
   loadCoveredSec?: Prisma.SortOrder
@@ -1237,6 +1263,7 @@ export type EnergyIntervalMinOrderByAggregateInput = {
   loadDerivedWh?: Prisma.SortOrder
   loadCounterWh?: Prisma.SortOrder
   gridCoveredSec?: Prisma.SortOrder
+  gridPhaseCoveredSec?: Prisma.SortOrder
   pvCoveredSec?: Prisma.SortOrder
   batCoveredSec?: Prisma.SortOrder
   loadCoveredSec?: Prisma.SortOrder
@@ -1275,6 +1302,7 @@ export type EnergyIntervalSumOrderByAggregateInput = {
   loadDerivedWh?: Prisma.SortOrder
   loadCounterWh?: Prisma.SortOrder
   gridCoveredSec?: Prisma.SortOrder
+  gridPhaseCoveredSec?: Prisma.SortOrder
   pvCoveredSec?: Prisma.SortOrder
   batCoveredSec?: Prisma.SortOrder
   loadCoveredSec?: Prisma.SortOrder
@@ -1327,6 +1355,7 @@ export type EnergyIntervalSelect<ExtArgs extends runtime.Types.Extensions.Intern
   loadDerivedWh?: boolean
   loadCounterWh?: boolean
   gridCoveredSec?: boolean
+  gridPhaseCoveredSec?: boolean
   pvCoveredSec?: boolean
   batCoveredSec?: boolean
   loadCoveredSec?: boolean
@@ -1369,6 +1398,7 @@ export type EnergyIntervalSelectCreateManyAndReturn<ExtArgs extends runtime.Type
   loadDerivedWh?: boolean
   loadCounterWh?: boolean
   gridCoveredSec?: boolean
+  gridPhaseCoveredSec?: boolean
   pvCoveredSec?: boolean
   batCoveredSec?: boolean
   loadCoveredSec?: boolean
@@ -1411,6 +1441,7 @@ export type EnergyIntervalSelectUpdateManyAndReturn<ExtArgs extends runtime.Type
   loadDerivedWh?: boolean
   loadCounterWh?: boolean
   gridCoveredSec?: boolean
+  gridPhaseCoveredSec?: boolean
   pvCoveredSec?: boolean
   batCoveredSec?: boolean
   loadCoveredSec?: boolean
@@ -1453,6 +1484,7 @@ export type EnergyIntervalSelectScalar = {
   loadDerivedWh?: boolean
   loadCounterWh?: boolean
   gridCoveredSec?: boolean
+  gridPhaseCoveredSec?: boolean
   pvCoveredSec?: boolean
   batCoveredSec?: boolean
   loadCoveredSec?: boolean
@@ -1474,7 +1506,7 @@ export type EnergyIntervalSelectScalar = {
   socLast?: boolean
 }
 
-export type EnergyIntervalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"bucketStart" | "calcVersion" | "maxGapSecUsed" | "mappingVersion" | "computedAt" | "gridImportNetWh" | "gridExportNetWh" | "gridImportPhaseWh" | "gridExportPhaseWh" | "gridImportCounterWh" | "gridExportCounterWh" | "pvIntWh" | "pvCounterWh" | "batChargeIntWh" | "batDischargeIntWh" | "batChargeCounterWh" | "batDischargeCounterWh" | "loadDerivedWh" | "loadCounterWh" | "gridCoveredSec" | "pvCoveredSec" | "batCoveredSec" | "loadCoveredSec" | "socCoveredSec" | "counterUnknownSec" | "counterGapAllocMask" | "flags" | "counterState" | "gridAvgW" | "gridMinW" | "gridMaxW" | "pvAvgW" | "pvMaxW" | "batAvgW" | "loadAvgW" | "loadMaxW" | "socMin" | "socMax" | "socLast", ExtArgs["result"]["energyInterval"]>
+export type EnergyIntervalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"bucketStart" | "calcVersion" | "maxGapSecUsed" | "mappingVersion" | "computedAt" | "gridImportNetWh" | "gridExportNetWh" | "gridImportPhaseWh" | "gridExportPhaseWh" | "gridImportCounterWh" | "gridExportCounterWh" | "pvIntWh" | "pvCounterWh" | "batChargeIntWh" | "batDischargeIntWh" | "batChargeCounterWh" | "batDischargeCounterWh" | "loadDerivedWh" | "loadCounterWh" | "gridCoveredSec" | "gridPhaseCoveredSec" | "pvCoveredSec" | "batCoveredSec" | "loadCoveredSec" | "socCoveredSec" | "counterUnknownSec" | "counterGapAllocMask" | "flags" | "counterState" | "gridAvgW" | "gridMinW" | "gridMaxW" | "pvAvgW" | "pvMaxW" | "batAvgW" | "loadAvgW" | "loadMaxW" | "socMin" | "socMax" | "socLast", ExtArgs["result"]["energyInterval"]>
 
 export type $EnergyIntervalPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "EnergyInterval"
@@ -1500,6 +1532,7 @@ export type $EnergyIntervalPayload<ExtArgs extends runtime.Types.Extensions.Inte
     loadDerivedWh: runtime.Decimal | null
     loadCounterWh: runtime.Decimal | null
     gridCoveredSec: number
+    gridPhaseCoveredSec: number | null
     pvCoveredSec: number
     batCoveredSec: number
     loadCoveredSec: number
@@ -1962,6 +1995,7 @@ export interface EnergyIntervalFieldRefs {
   readonly loadDerivedWh: Prisma.FieldRef<"EnergyInterval", 'Decimal'>
   readonly loadCounterWh: Prisma.FieldRef<"EnergyInterval", 'Decimal'>
   readonly gridCoveredSec: Prisma.FieldRef<"EnergyInterval", 'Int'>
+  readonly gridPhaseCoveredSec: Prisma.FieldRef<"EnergyInterval", 'Int'>
   readonly pvCoveredSec: Prisma.FieldRef<"EnergyInterval", 'Int'>
   readonly batCoveredSec: Prisma.FieldRef<"EnergyInterval", 'Int'>
   readonly loadCoveredSec: Prisma.FieldRef<"EnergyInterval", 'Int'>

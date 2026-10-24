@@ -139,6 +139,7 @@ function storedRow(
     loadDerivedWh: wh(row.loadDerivedWh),
     loadCounterWh: wh(row.loadCounterWh),
     gridCoveredSec: wholeSeconds(row.gridCoveredSec),
+    gridPhaseCoveredSec: wholeSeconds(row.gridPhaseCoveredSec),
     pvCoveredSec: wholeSeconds(row.pvCoveredSec),
     batCoveredSec: wholeSeconds(row.batCoveredSec),
     socCoveredSec: row.socCoveredSec,
@@ -184,6 +185,10 @@ function matchesStored(
       if (!isDeepStrictEqual(value, actual)) return false;
     } else if (value instanceof Date && actual instanceof Date) {
       if (value.getTime() !== actual.getTime()) return false;
+    } else if (key === 'gridPhaseCoveredSec' && actual === null) {
+      // NULL = stored before migration 0006 (phase coverage unknown). That is not evidence that
+      // older buckets changed, so recovery verification never rewrites them for this column alone.
+      continue;
     } else if (value === null || actual === null || actual === undefined) {
       if (value !== actual) return false;
     } else if (scalarText(value) !== scalarText(actual)) return false;

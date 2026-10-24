@@ -3,10 +3,10 @@
 ## Context
 
 Build a monitoring-only system for the user's Hoymiles hybrid installation: inverter HIT-10L-G3 (firmware V01.05.02), battery LB-16D-G3 (V03.00.01.03), and gateway DTS-WL-G3 (V03.00.19).
-- **Backend.** NestJS + Prisma + GraphQL + PostgreSQL, running 24/7 in Docker on TrueNAS. It collects data and calculates household usage and TNB electricity cost itself, without depending on any PC or phone.
+- **Backend.** NestJS + Prisma + GraphQL + PostgreSQL, intended to run 24/7 in Docker on TrueNAS. The implemented backend owns collection and independent household-usage/TNB-cost calculation; NAS deployment and autonomy acceptance remain pending.
 - **Why independent totals.** The installing technician says the S-Miles app's **grid import/export totals** are inaccurate. The app's numbers are therefore never the source of truth.
-- **Dashboard.** A Windows Electron app that only reads from the backend API. It never owns collection or the database.
-- **Repository state.** `D:/Github/house-solar-monitoring` held only `PLAN_MODE_PROMPT.txt` when this plan was written; milestone M1 (read-only Modbus layer, probe, replay server, analysis tools) has since been built in `apps/backend`. It is a git repo with no commits; the remote is `https://github.com/Captain-Slow/house-solar-monitoring.git`.
+- **Dashboard.** A Windows Electron app using only the backend API, including authorized administration of monitoring data and tariff/accounting configuration. It never owns collection or the database and never controls the inverter, battery or gateway.
+- **Repository state.** The repository now has commits (user-reported). The Modbus collector, persistence, accounting, billing, shared contracts, Electron dashboard and deployment/verification scripts exist. `docs/operations.md` §9 records local software work through 2026-10-23; this is not NAS, hardware, installer or real-bill acceptance. The original M1-only/no-commits snapshot is obsolete; the remote remains `https://github.com/Captain-Slow/house-solar-monitoring.git`.
 - **Hard limits.** No writes to the inverter, battery, or gateway. No control, firmware, account, or tariff-provider changes. No cloud login, **except the read-only stopgap adapter defined in Amendment A1** (cloud login by the user, never by me). No Android UI scraping and no ADB use.
 
 ### User decisions (binding)
@@ -23,9 +23,9 @@ Build a monitoring-only system for the user's Hoymiles hybrid installation: inve
 - **Collector lives in the NestJS backend.** It ports the needed subset of the MIT-licensed `hoymiles-g3-modbus-tcp` register map to TypeScript (pinned commit `78c620dfe01849e7610d84b64823dd958c901476`, tag 0.3.0) and uses `modbus-serial`.
   - No Python service runs in production. Decoding is just big-endian U16/I16/U32/I32 with fixed scales, so the Python library adds nothing beyond its register catalog.
   - The Python library is used once, during Phase 1, as an independent reference decoder.
-- **Accounting:** grid import/export is integrated by us from the **external grid meter's instantaneous per-phase power**. The inverter's own lifetime counters are kept as cross-checks. Everything is reconciled against TNB meter readings.
+- **Accounting:** grid import/export is integrated by us from the **external grid meter's instantaneous power**: `METER_NET` uses the meter's own total (register 1814) and `METER_PER_PHASE` uses its three per-phase readings (1808/1810/1812), each split directionally per integration interval. The inverter's own lifetime counters are kept as cross-checks. Everything is reconciled against TNB meter readings.
 - **Cost:** a small, effective-dated tariff engine that must reproduce the user's real TNB bill.
-- **Sequencing:** real-data gates come first. The collector is deployed to TrueNAS **before** accounting and UI work, so 24/7 data accumulates for reconciliation while the rest is built.
+- **Sequencing:** the original recommendation was to deploy collection before accounting/UI work. Implementation instead progressed locally through accounting and the dashboard while the wired-path gates remained blocked. This does not waive the gates: keep the shipping collector disabled until G0–G2 pass; physical accuracy, NAS autonomy and real-bill sign-off still require their separate evidence.
 
 ```mermaid
 flowchart LR
@@ -59,7 +59,7 @@ flowchart LR
 | 9 | Several grid-power candidates exist: meter 1814 (I32), "Grid Active Power" 2165 (I16; the library says inverter grid port), overview 30011 (I32) | Community | `registers.py`, README | M1 classifies each |
 | 10 | No RTC/clock, no serial-number, and no DTS-firmware register exists | Verified absence | `registers.py`, `config.py` | Timestamps are collector-observed. Device identity is the **configured** `DEVICE_KEY` plus a model-string match; `detect` features (MPPT count, battery and meter presence, capacity) are changing observations, never identity (Phase 2.5) |
 | 11 | Battery current "+ = discharging" (claim); grid and inverter signs undocumented | Community / unknown | README | G3 |
-| 12 | Junk registers: 2151 `pv_power` (always 0), `load_energy_total` (always 0), 112 and 153–156 (constant 5) | Community (HIT-15L) | README | Never read or used |
+| 12 | Junk registers: 2151 `pv_power` (always 0), `load_energy_total` (always 0), 112 and 153–156 (constant 5) | Community (HIT-15L) | README | Never mapped, decoded or used; bulk read ranges can contain these words |
 | 13 | `arm_system_faults` 30029 bit 2 = "Persistently negative load power"; `arm_periph_faults` 30028 bit 2 = "Grid meter comm lost" | Source | `registers.py` | CT-direction and meter-health signals |
 | 14 | Physical facts: Ethernet cabling, IP, port, CT placement/direction, how the utility meter nets phases | Unknown | none | G0, G3, G6 |
 | 15 | Official API (`wapi.hoymiles.com`, key by email/OAuth) documents only `production_stats`, `consumption_stats`, `status`, `mi_data_day`; no battery/grid/load telemetry | Verified docs (JS-rendered, partially readable) | developer.hoymiles.com | Not used |
@@ -84,7 +84,7 @@ flowchart LR
 | Maintenance / operational risk | Small unofficial map; single-client limit; unauthenticated protocol | Breaks with app updates; ToS risk; control endpoints present | Approval unknown; insufficient fields |
 | Decision | **Build** (target) | Stopgap only, non-ledger (Amendment A1) | Not built |
 
-Gates. **G0–G6 belong to the Modbus track.** Phase 2's Modbus collector and ledger start only when G0–G2 pass. D0 and the deployment gates are common to both tracks. The cloud stopgap track has its own entry gates C1–C3 and acceptance tests (Amendment A1); it never satisfies or bypasses G0–G6.
+Gates. **G0–G6 belong to the Modbus track.** Real-site Modbus collection is enabled only after G0–G2 pass. The API, accounting worker and synthetic/local verification do not require a live source; their execution is not hardware acceptance. D0 and deployment gates are common to both tracks. Deferred A1 has its own C1–C3/VC1–VC5 gates and never satisfies or bypasses G0–G6.
 
 | Gate | Pass criterion | On failure |
 |---|---|---|
@@ -120,8 +120,8 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
 
 | Quantity | Primary register(s) | Cross-checks | Canonical sign | Point (verify) | Notes |
 |---|---|---|---|---|---|
-| Grid net power | `meter_active_total` 1814 I32 W; phases 1808/1810/1812 I32 W | 2165 I16; 30011 I32 | + import | External RS485 meter CTs | Valid only if 1800 = 1 and 30028 bit 2 = 0 |
-| Grid import/export energy | Our integration (NET and PER_PHASE) | `grid_buy_energy` 2040 / `grid_sell_energy` 2048 U32 ÷10 kWh; per-phase 2042–2046 / 2050–2054 | directional | Meter / counter instrument unknown | Counters have 0.1 kWh resolution |
+| Grid net power | `meter_active_total` 1814 I32 W is the `METER_NET` input (the meter's own total, never recomputed from the phases); phases 1808/1810/1812 I32 W are the separate `METER_PER_PHASE` inputs | 2165 I16; 30011 I32 | + import | External RS485 meter CTs | Valid only if 1800 = 1 and 30028 bit 2 = 0 |
+| Grid import/export energy | Our integration: `METER_NET` splits the 1814 meter total directionally per interval; `METER_PER_PHASE` splits each normalized phase directionally per interval and sums the results | `grid_buy_energy` 2040 / `grid_sell_energy` 2048 U32 ÷10 kWh; per-phase 2042–2046 / 2050–2054 | directional | Meter / counter instrument unknown | Counters have 0.1 kWh resolution |
 | PV power | Σ `pv1..4_power` 29/32/35/38 U16 W | `pv_total_power_eb` 2150; 30001 H32 | ≥ 0 | DC MPPT inputs | 2151 is junk |
 | PV string voltage | `pv1..4_voltage` 27/30/33/36 U16 ÷10 V | — | ≥ 0 | DC MPPT inputs | Datasheet: max input 1000 V, rated 720 V, MPPT 150–900 V. Bound 0–1100 V (1000 V + 10% margin, a design choice); 600–1000 V is a valid reading |
 | AC / EPS / meter voltage | 62–64, 67–69, 81–83, 1801–1803, 1851–1853 U16 ÷10 V | — | ≥ 0 | AC ports and meter | Library bound 0–600 V |
@@ -145,7 +145,7 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
    - If there is no cable: run Ethernet (or attach a Wi-Fi-to-Ethernet bridge) to the stick's Ethernet port.
    - If the stick gets no lease when cabled: stop (see Contingencies).
 2. **Check the port.** From the PC: `Test-NetConnection <stick-ip> -Port 502`. Test only this IP; never scan.
-3. **Record TrueNAS facts** in `docs/operations.md` § "Site facts": version, pool name, NAS LAN IP, free RAM and disk. Gate D0: version ≥ 24.10.
+3. **Record TrueNAS facts** in `docs/operations.md` § "Site facts": the user-reported version **25.04.2.6** satisfies D0 (≥ 24.10). Pool name, trusted NAS LAN IP, free RAM and free disk remain unprovided; no NAS inspection or deployment is implied.
 
 ### Phase 1: Scaffold, read-only Modbus layer, probe, M1 (Modbus track; depends on Phase 0; gates G1–G4; the code and replay tests need no hardware, the probe sessions do)
 1. **Monorepo with npm workspaces.**
@@ -161,7 +161,7 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
    - Each entry: `{ key, addr, fc: 3 | 4, dtype: 'U16'|'I16'|'U32'|'I32'|'H32'|'I32R', scale, unit, enum?, bitmap? }`.
    - Header: the MIT copyright notice from the library LICENSE and the source commit.
    - Never include 2151, `load_energy_total`, 112, or 153–156.
-   - This file is the only place register addresses exist.
+   - This file defines mapped register fields, types and scales; `read-plan.ts` separately owns bulk-range boundaries and DETECT reads.
 3. **`src/modbus/decode.ts`.** Port `decode_words` (big-endian, high word first; `I32R` is low word first; value ÷ scale) and `decode_ascii_string` (byte-swapped, longest printable run).
 4. **`src/modbus/read-plan.ts`.** `buildReadPlan(ranges, maxBlock = 123)` is a direct port of the library's `build_read_plan` (each `[lo, hi)` chunked from `lo`). Tier constants:
    - `FAST` = `[(0,123), (1800,1924), (2000,2246), (30000,30030)]` → 6 FC04 requests (starts 0, 1800, 1923, 2000, 2123, 30000). The library's default ranges are `(0,369), (1800,1924), (2000,2246), (30000,30030)`; the plan splits its first range into FAST `(0,123)` and SLOW `(123,246)` and never reads `246–369` (no mapped register lives there). The library reads 30000 to 30030 as well, so fault bitmaps come every poll.
@@ -196,7 +196,7 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
    - counter-vs-integration ratios and the `*_today` reset time (G5)
    - the daily balance residual
 
-   `src/cli/export-samples.ts` dumps DB samples to the same JSONL format, so the analysis can be reused on NAS data in Phase 4.
+   `src/cli/export-samples.ts` exports retained DB raw polls to diagnostic JSONL wire captures for analysis. It does not export Sample history, run/sequence identities or acquisition timing. Replaying it creates a new synthetic acquisition, not original coverage/clock-validity evidence. Use `RENORMALIZE` on retained database rows for historical reconstruction and `pg_dump`/restore for lossless preservation.
 10. **Write `docs/field-mapping.md` (M1)** and the `MappingConfig` v1 values:
 
     ```ts
@@ -218,12 +218,12 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
 ### Phase 2: Persistence, collector, ingestion, auth/TLS, minimal API (persistence/auth/API/deployment depend only on the M1 code; the Modbus collector's real-hardware exit depends on G0–G2)
 1. **Prisma 7.10.1.**
    - **One configuration/build layout.** `apps/backend/prisma.config.ts` imports only `./src/config/database-url`, a dependency-free module (`node:fs` only; it must never import anything else). `buildDatabaseUrl(env)` returns `DATABASE_URL` unchanged when `DATABASE_PASSWORD_FILE` is unset (dev/tests). Otherwise it reads the file, strips trailing whitespace, and returns the URL with the URL-encoded password inserted (`DATABASE_URL` carries the user but no password, e.g. `postgresql://solar@db:5432/solar`). The migrate service and the backend's `pg.Pool` both call it, so they share one secret file. Generator `prisma-client` with output `src/generated/prisma`.
-   - The runtime image (`WORKDIR /app`) contains exactly: `dist/`, pruned hoisted production `node_modules/` (including `prisma`, `@prisma/*`, and the schema-engine binary downloaded during `npm ci` in the build stage, so `migrate` needs no egress), `prisma/` (schema and `migrations/`), `prisma.config.ts`, `src/config/database-url.ts`, and `package.json`, plus the OS package `openssl` (Prisma's schema engine links libssl; it must also be installed in the stage that runs `npm ci`, or Prisma downloads the OpenSSL 1.1 engine and fails on the OpenSSL 3 runtime). `prisma migrate deploy` needs nothing else; V19 verifies this with `internal` networking only (`deploy/dev/verify-v19.sh`, built in M3).
+   - The runtime image (`WORKDIR /app`) contains exactly: `dist/`, separately installed hoisted production `node_modules/` (including `prisma`, `@prisma/*`, and the schema-engine binary downloaded during `npm ci --omit=dev` in the dependency stage, so `migrate` needs no egress), `prisma/` (schema and `migrations/`), `prisma.config.ts`, `src/config/database-url.ts`, and `package.json`, plus the OS package `openssl` (Prisma's schema engine links libssl; it must also be installed in the stage that runs `npm ci`, or Prisma downloads the OpenSSL 1.1 engine and fails on the OpenSSL 3 runtime). `prisma migrate deploy` needs nothing else; V19 verifies this with `internal` networking only (`deploy/dev/verify-v19.sh`, built in M3).
    - `@prisma/adapter-pg` with `new pg.Pool({ max: 10, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, statement_timeout: 30000 })`. pg has no default connect timeout, so this must be set explicitly.
-   - Migration `0001_core`: the core models from the Data model section, **including `LedgerDirtyRange` and `DirtyReason`**, because Phase 2 ingest writes dirty ranges (Phase 2.6) and the Phase 4 worker only consumes them. Later phases add `0002_accounting` and `0003_tariff`.
-2. **`src/config/env.ts`.** A zod schema for: `SITE_TIMEZONE`, `DATABASE_URL` (no password), `DATABASE_PASSWORD_FILE`, `MODBUS_HOST`, `MODBUS_PORT=502`, `MODBUS_UNIT_ID=1`, `MODBUS_TIMEOUT_MS=3000`, `DEVICE_KEY=inverter-1`, `EXPECTED_MODEL=HIT-10L-G3`, `OWNERSHIP_LEASE_SEC=15`, `POLL_FAST_MS=10000`, `POLL_SLOW_MS=300000`, `POLL_SETTINGS_MS=900000`, `COLLECTOR_ENABLED=true`, `HTTPS_PORT=8443`, `TLS_DIR=/data/tls`, `TLS_SUBJECT_ALT_NAMES`, `RAW_RETENTION_DAYS=400`, `SAMPLE_RETENTION_DAYS=400`, `BACKUP_DIR=/backups`, `LOG_LEVEL=info`. On an invalid value, log the field name and `process.exit(78)`.
-3. **`src/collector/normalize.ts` (pure).** `(fastPoll, mapping, repeatState) → SampleInput`.
-   - Applies canonical signs and computes `meterRepeatSec`: seconds since the SHA-256 of words 1800–1827 last changed.
+   - Migration `0001_core`: the core models from the Data model section, **including `LedgerDirtyRange` and `DirtyReason`**, because Phase 2 ingest writes dirty ranges (Phase 2.6) and the Phase 4 worker only consumes them. Later phases add `0002_accounting` and `0003_tariff`. The current chain also includes additive `0004_raw_poll_monotonic` (nullable acquisition timing facts plus acquisition-order index) and `0005_soc_coverage` (nullable independent SOC coverage) and `0006_grid_phase_coverage` (nullable `EnergyInterval.gridPhaseCoveredSec`, the `METER_PER_PHASE` coverage; NULL = unknown historical coverage). Current constants are `LEDGER_ALGO_VERSION = 3` and `BILLING_CALC_VERSION = 2`.
+2. **`src/config/env.ts`.** A zod schema for: `SITE_TIMEZONE`, `DATABASE_URL` (no password), `DATABASE_PASSWORD_FILE`, `MODBUS_HOST`, `MODBUS_PORT=502`, `MODBUS_UNIT_ID=1`, `MODBUS_TIMEOUT_MS=3000`, `DEVICE_KEY=inverter-1`, `EXPECTED_MODEL=HIT-10L-G3`, `OWNERSHIP_LEASE_SEC=15`, `POLL_FAST_MS=10000`, `POLL_SLOW_MS=300000`, `POLL_SETTINGS_MS=900000`, `COLLECTOR_ENABLED=true`, `COLLECTOR_SOURCE=MODBUS` (`MODBUS | NONE` only until A1 is implemented), `HTTPS_PORT=8443`, `TLS_DIR=/data/tls`, `TLS_SUBJECT_ALT_NAMES`, `RAW_RETENTION_DAYS=400`, `SAMPLE_RETENTION_DAYS=400`, `BACKUP_DIR=/backups`, `LOG_LEVEL=info`. On an invalid value, log the field name and `process.exit(78)`. Shipping TrueNAS compose overrides `COLLECTOR_ENABLED=false`, disabling acquisition regardless of source.
+3. **`src/collector/normalize.ts` (pure).** `normalizeFast({blocks, observedAt, monotonicMs, mapping, mappingVersion, state, recordedMeterRepeatSec?}) → {sample, state, events}`.
+   - Applies canonical signs and computes `meterRepeatSec` from the collector monotonic midpoint: elapsed seconds since the SHA-256 of words 1800–1827 changed, comparable only within one collector run. Wall-clock changes never reset a frozen reading's age.
    - Sets `Sample.flags` bits:
 
      | Bit | Flag | Condition |
@@ -232,7 +232,7 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
      | 1 | `METER_COMM_FAULT` | 30028 bit 2 |
      | 2 | `METER_STALE` | repeat span > `maxRepeatSpanSec` |
      | 3–6 | `BLOCK_INVALID_0/1800/2000/30000` | block invalid |
-     | 7 | `CLOCK_STEP` | \|Δwall − Δmonotonic\| > 2 s within a run |
+     | 7 | `CLOCK_STEP` | backward wall time or \|Δwall − Δmonotonic\| > 2 s within a run |
      | 8 | `NEGATIVE_DERIVED_LOAD` | derived load < −50 W |
      | 9 | `BATTERY_SIGN_CONFLICT` | \|P\| > 100 W and sign disagrees with 1904 |
 
@@ -252,12 +252,13 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
    - **Device identity** = `DataSource` + the configured `DEVICE_KEY`: exactly one non-retired `Device` row per key. Because no serial register exists, replacement is explicit: `node dist/cli/device.js replace --key <DEVICE_KEY> --effective-at <ISO> --reason <text>` (admin CLI, run in the backend container) retires the current row at `effectiveAt`, creates a new row with the same key, and emits `DEVICE_REPLACED`. The counter state machines start a new segment at that boundary. A same-model hardware swap that nobody records is detectable only through `COUNTER_RESET`/`COUNTER_DISCONTINUITY` events and reconciliation, not from registers.
    - Upstream failures never exit the process.
 6. **`src/collector/ingest.service.ts`.**
-   - Writes `RawPoll` + `Sample` + dirty-range rows in one transaction. `Sample` is inserted with `INSERT … ON CONFLICT (deviceId, observedAt) DO NOTHING RETURNING observedAt` against `@@unique([deviceId, observedAt])`, so only genuinely new samples dirty the ledger.
+   - Writes `RawPoll` + `Sample` + dirty-range rows in one transaction. Raw polls deduplicate by `(runId, seq)`; Samples use `INSERT … ON CONFLICT (deviceId, observedAt) DO NOTHING RETURNING observedAt`, keeping the first acquisition at a collided wall timestamp. New samples dirty the ledger; a new raw-only FAST collision can also prove a stale run and dirty affected existing samples even when it inserts no Sample.
    - **Dirty marking.** For the newly inserted samples with earliest time `t_min` and latest `t_max`, insert one `LedgerDirtyRange(reason = INGEST)` with `fromBucket = floor5(t_prev)` and `toBucket = ceil5(t_next)` (exclusive), where `t_prev` is the latest existing sample before `t_min` (else `t_min`) and `t_next` the earliest existing sample after `t_max` (else `t_max`, rounded up to the next bucket boundary). This covers every interval a late or buffered sample can change, however old.
-   - DB unavailable or writes failing: an in-memory FIFO holds up to 360 already-collected FAST polls (1 h at 10 s). It protects **collected** data from flush failures only; it does not mean collection continues for an hour, because collection stops when ownership is lost (Phase 2.4). Flush with backoff 5 → 60 s. On overflow, drop the oldest and record a `DB_UNAVAILABLE` gap event once the DB is back.
+   - DB unavailable or writes failing: the queue reserves 360 already-collected FAST polls (1 h at 10 s) and a separate 64 SLOW/SETTINGS polls; pending writes count toward those capacities. It protects **collected** data from flush failures only; it does not mean collection continues for an hour, because collection stops when ownership is lost (Phase 2.4). Flush with backoff 5 → 60 s. On overflow, drop the oldest and record a `DB_UNAVAILABLE` gap event once the DB is back.
    - After `maxRepeatSpanSec` is exceeded, retroactively set `METER_STALE` on the run of repeated samples (one `UPDATE`). **In the same transaction** insert a `LedgerDirtyRange(reason = INGEST)` covering the entire modified run plus its bounding samples (`floor5` of the sample before the run's first modified sample to `ceil5` of the sample after its last), so buckets already computed from those samples are recomputed even though no new sample was inserted there.
+   - Persist immutable FAST `monotonicMs`, `acquisitionClockStep` and `acquisitionMeterRepeatSec` in RawPoll. Rebuild in `(deviceId, runId, seq)` acquisition order, resetting state per run; other tiers explain intervening sequence numbers, but missing acquisitions are unknown boundaries. Preserve recorded clock invalidity and retained stale evidence; an explicitly higher repeat threshold may loosen stale status as a mapping-policy change. Legacy NULL timing is never reconstructed from wall time: retain a surviving Sample's timing; without one, mark reconstructed timing clock-invalid. Full boundary/collision rules: `docs/operations.md` §7 historical re-normalization and acquisition timing.
    - SLOW/SETTINGS polls → `RawPoll` + `Device.latestStatus` (decoded `ems_mode`, `workstatus`, firmware, SOH, active fault labels, `observedAt`).
-7. **Retention.** An in-process daily job at 03:00 `SITE_TIMEZONE` deletes `RawPoll` and `Sample` rows older than their retention, in batches of 10,000. It never deletes a `Sample` at or after the earliest pending `LedgerDirtyRange.fromBucket` (rows accumulate unprocessed until the Phase 4 worker exists, about 8,640 per day, and are consumed by its first pass).
+7. **Retention.** A daily 03:00 `SITE_TIMEZONE` job prunes in batches of 10,000. Sample pruning protects pending dirty ranges and RUNNING `RENORMALIZE` windows and nonblockingly takes replay reservation 716071/7, deferring Sample pruning if busy. Raw pruning independently protects the dirty-range pin and never deletes a poll referenced by a surviving Sample. Defaults remain 400 days each; the complete horizon contract is Phase 4.4, not a guarantee that deleted evidence can be recovered.
 8. **`src/main.ts` (HTTPS).**
    - Load `TLS_DIR/cert.pem` and `key.pem`. If missing, generate a self-signed ECDSA P-256 certificate (package `selfsigned`) with SANs from `TLS_SUBJECT_ALT_NAMES`, valid 3650 days.
    - Log `TLS certificate fingerprint sha256/<base64 SHA-256 of DER>`.
@@ -283,10 +284,10 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
     - `src/cli/healthcheck.ts` calls `/healthz`.
     - Modbus state never affects either endpoint.
 12. **Logging.** `nestjs-pino` with `redact: ['req.headers.authorization', '*.token', '*.password', '*.DATABASE_URL']`.
-13. **`src/cli/replay-server.ts`.** A `modbus-serial` `ServerTCP` implementing only `getMultipleInputRegisters` and `getMultipleHoldingRegisters` from a JSONL capture; it advances one record per FAST cycle. There are no `set*` handlers.
+13. **`src/cli/replay-server.ts`.** A `modbus-serial` `ServerTCP` with single/multiple input/holding read handlers and no write handlers. New clients are expected to issue the four DETECT reads in order, served from DETECT independently of failed FAST blocks. FAST records advance on the read at 30000; captured failures return ILLEGAL DATA ADDRESS. A client skipping DETECT has an ambiguous first block-0 read served from DETECT (the collector always detects first). Replay is synthetic acquisition, not a timing-history restore.
 14. **Docker.**
-    - `apps/backend/Dockerfile` (multi-stage): base `node:24-bookworm-slim@sha256:<digest pinned at build>`, then `npm ci -w apps/backend`, then `prisma generate`, then `nest build`, then `npm prune --omit=dev`.
-    - Runtime stage (`WORKDIR /app`) copies exactly the file set listed in item 1: `dist`, pruned hoisted `node_modules`, `prisma/`, `prisma.config.ts`, `src/config/database-url.ts`, `package.json`. `prisma` is a production dependency so the migrate service can run. `USER 568:568`, `CMD ["node", "dist/main.js"]`. The backend never runs migrations itself; only the `migrate` service does, so "migrations disabled" during a restore simply means that service is not started.
+    - `apps/backend/Dockerfile` has build, production-dependency and runtime stages using pinned `node:24-bookworm-slim`. Build runs `npm ci -w apps/backend`, `prisma generate` and `nest build`; the separate dependency stage runs `npm ci -w apps/backend --omit=dev`, not `npm prune`, and removes the workspace symlink. Both install stages include OpenSSL. Root `allowScripts` approves `prisma@7.10.1` and `@prisma/engines@7.10.1`; keep these exact approvals aligned with the three Prisma pins on future bumps and rerun offline V19.
+    - Runtime stage (`WORKDIR /app`) copies exactly the file set listed in item 1: `dist`, production-dependency-stage hoisted `node_modules`, `prisma/`, `prisma.config.ts`, `src/config/database-url.ts`, `package.json`. `prisma` is a production dependency so the migrate service can run. `USER 568:568`, `CMD ["node", "dist/main.js"]`. The backend never runs migrations itself; only the `migrate` service does, so "migrations disabled" during a restore simply means that service is not started.
     - `deploy/dev/compose.dev.yaml`: `postgres:18.6-bookworm` on `127.0.0.1:${DEV_DB_PORT:-55432}` for dev and tests (override `DEV_DB_PORT` when 55432 is taken; the compose file ships in M1 because the probe's lock tests need it).
 
 **Exit:** run against the replay server with `day.jsonl`:
@@ -316,11 +317,11 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
 3. **App.** Install `deploy/truenas/compose.yaml` via Apps → Discover → ⋮ → Install via YAML, with placeholders substituted.
 4. **Tokens.** From the backend container shell: `node dist/cli/token.js create --name desktop --role ADMIN`, and the same with `--name viewer --role VIEWER`.
    - Copy `/mnt/<pool>/apps/house-solar/tls/cert.pem` to the PC.
-   - Verify: `curl.exe --cacert cert.pem -H "Authorization: Bearer <token>" -H "content-type: application/json" -d "{\"query\":\"{ collectorStatus { state } }\"}" https://<nas-ip>:8443/graphql` returns `RUNNING`.
+   - Verify authenticated `collectorStatus` using the hidden-prompt/stdin curl procedure in `docs/operations.md` §3: never put a bearer token in shell history or process arguments. The initial shipping state is `DISABLED`. Expect `RUNNING` only after G0–G2 pass, `MODBUS_HOST` names the verified wired address, and collection is explicitly enabled.
 5. **Backups and a restore drill** per the Operations section, including the restore-only app file `deploy/truenas/compose.restore.yaml`.
 6. **Runbook.** Write `docs/operations.md`: site facts, install, tokens, upgrade/rollback, backup, restore, restore-drill log.
 
-**Exit (staged).** *Stage 3a (after Phase 2):* 72 h of continuous collection with ≥ 99% of expected FAST samples (Modbus) or the A1 cloud cadence (cloud), excluding documented restarts; nightly dumps produced unattended with no `PGPASSWORD` in environment or logs (V20); the production-path restore completes against the core schema and the collector resumes; `Sample`/`RawPoll` counts (Modbus) or `CloudSnapshot` payloads with `firstFetchedAt`/`lastFetchedAt`/`fetchCount` (cloud) match up to the dump time. *Stage 3b (after Phases 4 and 5):* the `energyTotals` equality check and the older-schema restore (V21, dump at `0002`, upgrade to `0003`). Phase 3 is signed off only when 3b passes.
+**Exit (staged).** *Stage 3a (after Phase 2):* 72 h of continuous collection with ≥ 99% of expected FAST samples (Modbus) or the A1 cloud cadence (cloud), excluding documented restarts; nightly dumps produced unattended with no `PGPASSWORD` in environment or logs (V20); the production-path restore completes against the core schema and the collector resumes; `Sample`/`RawPoll` counts (Modbus) or `CloudSnapshot` payloads with `firstFetchedAt`/`lastFetchedAt`/`fetchCount` (cloud) match up to the dump time. *Stage 3b (after Phases 4 and 5):* the `energyTotals` equality check and the older-schema restore (V21, dump at `0002`, then apply exactly all pending migrations to the current schema (currently `0003_tariff`, `0004_raw_poll_monotonic`, `0005_soc_coverage`)). Phase 3 is signed off only when 3b passes.
 
 ### Phase 4: Accounting ledger, totals, reconciliation API (depends on Phase 2; uses NAS data once Phase 3 runs)
 1. `src/accounting/integrate.ts`: pure; algorithm in the Accounting section.
@@ -331,9 +332,10 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
    - **Seeding.** Integration seeds from the single latest valid sample before the range start (an indexed lookup, however old; an interval integrates only if its gap ≤ `maxGapSec`). Counter processing seeds from the **preceding accepted baseline**: each `EnergyInterval` stores `counterState` (per counter: last accepted value and time, segment, pending confirmation candidates) at its end, and the worker loads the latest row with `bucketStart < fromBucket` regardless of age. A counter transition that begins before `fromBucket` (a long gap between that baseline and the first accepted reading in the range) widens the write range back to the baseline's bucket so gap-allocated energy is redistributed over the whole span.
    - **Lookahead.** A counter transition that STARTS inside a chunk but is resolved by a reading after the chunk end (including readings that are rejected as spikes first) still allocates its share of energy to the chunk's buckets: `computeRange` keeps stepping a copy of each counter's state through the samples at/after the range end until that transition resolves, and reports `lookaheadUnresolved` when the supplied samples ran out; the worker then loads more samples (growing batches) so a chunk is always identical to the same buckets of a whole-range pass. A range that is re-queued more than 20 times in one pass without progress is left pending with a warning (a correct ledger never hits this). That cap counts only chunks that commit; a transaction that throws or times out commits nothing and is not counted, so it does not bound work. Work is bounded structurally instead: a chunk writes at most one local day and never leaves one writable interval, verification never reaches below the writable interval start (under a raw horizon: the rebuilt window) and the 120 s transaction timeout is unchanged. Verification may still read several earlier local days, and counter lookahead may read samples beyond the written day, inside the same transaction; those reads are bounded by the counter anchor and the interval start, not by one day.
    - **Durable monitoring start.** `monitoringSince` is the earliest `AccountingPolicy.effectiveFrom`. The seeded v1 takes the earliest sample seen; if an earlier sample arrives later (out-of-order ingest), the earliest segment's `effectiveFrom` moves backwards to it (never forward), in the same transaction as the ledger pass, so it survives sample retention.
+   - **`collectorStatus` accounting metadata.** `policyVersion` is the `version` of the non-superseded `AccountingPolicy` in force at server time, chosen by `selectSegment` (largest `effectiveFrom` ≤ now; on an equal `effectiveFrom` the higher version). Superseded and future-dated versions are ignored. `0` is the sentinel for "no policy in force" (nothing seeded yet, or every active version starts later); the field stays a non-null `Int`. `calcVersion` is the running ledger algorithm version, `LEDGER_ALGO_VERSION` (currently 3). It is not `BILLING_CALC_VERSION`, and it does not claim that every stored bucket was recomputed under it (buckets outside retention keep their stored `calcVersion`). `monitoringSince` is the same durable accounting start as above (earliest `AccountingPolicy.effectiveFrom`; Sample retention never moves it, delayed earlier data moves it backward) and is `null` while no accounting policy exists. `collectorStatus` is read-only and never creates or seeds a policy. If no policy has been created explicitly, it reports `policyVersion` 0 and `monitoringSince` null after the first samples arrive until the next ledger pass seeds policy v1; an ADMIN-created policy is reflected immediately according to the same selection and accounting-start rules. `energyTotals.monitoringSince` is unchanged and still falls back to the earliest retained Sample while no policy exists.
    - **Propagation (persisted continuation).** Inside each chunk transaction the worker compares the newly computed end-of-chunk `counterState` with the value stored for that bucket *before* overwriting it. If the chunk is not the end of the dirty range, the row's `fromBucket` advances to the chunk end. If it is the end and the states differ while later `EnergyInterval` rows exist, the row is **not** deleted: in the same transaction it becomes the continuation `[chunkEnd, min(chunkEnd + 1 day, frontier))`, where `frontier` is the end of the latest existing bucket (`max(bucketStart) + 300 s`), so the final stored bucket is itself recomputed when its predecessor's end state changed. The row is deleted only in the transaction whose end state equals the stored one (convergence) or that reaches the frontier. A crash at any point therefore leaves either the old row or the continuation row, never neither.
    - **Retention.** Ordinary recomputation needs `Sample`s, so it covers only buckets within `SAMPLE_RETENTION_DAYS`. A dirty range older than the cutoff is truncated there; older `EnergyInterval`s keep their stored values (flagged `OUTSIDE_RETENTION`, or `STALE_CALC_PARAMS` for a calculation-parameter change) and the originating mutation reports `outsideRetentionBefore`. The one exception is explicit `RENORMALIZE` dirt (reason `RENORMALIZE`, never merged with other reasons), bounded by `RAW_RETENTION_DAYS` because it first rebuilds `Sample`s from `RawPoll`. When raw retention exceeds sample retention: the *rebuilt window* is the requested range of a RUNNING `RENORMALIZE` run and that range never grows; below the sample cutoff the worker writes only inside a rebuilt window and never deletes a stored row; rows outside every window are authoritative (not rewritten, not re-verified, the nearest supplies the starting counter state, propagation stops there, at most the adjacent row after the window gets `OUTSIDE_RETENTION`); the request clamps its dirt to the window below the sample cutoff. The retention job never deletes a `Sample` at or after the earliest pending dirty `fromBucket`, nor one inside a RUNNING rebuilt window, and takes the same advisory reservation as `requestRecalculation` (lock 716071/7) without waiting, deferring Sample pruning to the next run when it is busy, so an uncommitted replay is never raced. Reconstruction from already-deleted data is never claimed.
-   - If code constant `LEDGER_ALGO_VERSION` > a bucket's stored `calcVersion`, buckets within retention are marked dirty (`CalculationRun.kind = ALGO_UPGRADE`); older buckets keep their `calcVersion` and are flagged.
+   - If code constant `LEDGER_ALGO_VERSION` > a bucket's stored `calcVersion`, buckets within retention are marked dirty (`CalculationRun.kind = ALGO_UPGRADE`); older buckets keep their `calcVersion` and are flagged. Version 3 repairs supported retained acquisition validity before computation while preserving each Sample's historical mapping and decoded values; explicit RENORMALIZE instead uses the current mapping. Repair covers interpolation predecessors and grown counter lookahead. Corrections, dirty work, billing invalidation and the chunk commit are atomic; unsupported historical energy/version/NULL SOC evidence is retained, never fabricated.
    - Mutation `requestRecalculation(kind, from, to, reason)` inserts a dirty range clamped to retention and returns the `CalculationRun`; an overlapping concurrent request returns `RECALC_IN_PROGRESS`. `RENORMALIZE` rebuilds `Sample` rows from `RawPoll` with the current `MappingVersion` (within raw retention), then marks the same range dirty with reason `RENORMALIZE`, clamped to the requested range below the sample cutoff (see Retention).
 5. **`src/accounting/policy.ts`.**
    - Policy segments: creating a version with `effectiveFrom = T` supersedes all active segments with `effectiveFrom ≥ T` (sets `supersededByVersion`). A bucket uses the active segment with the largest `effectiveFrom` ≤ bucket.
@@ -385,14 +387,14 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
    - Production renderer is served through `protocol.handle('app', …)` (registered privileged `standard` + `secure`) with the header `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`.
    - Development uses the Vite dev server without CSP.
 4. **API client in main** (`src/main/api-client.ts`).
-   - `const ses = session.fromPartition('persist:backend')`.
-   - `ses.setCertificateVerifyProc((req, cb) => cb(req.hostname === cfg.host ? (req.certificate.fingerprint === cfg.pinnedFingerprint ? 0 : -2) : -3))`.
+   - For each trusted backend configuration, retire/close the previous transport and create a fresh UUID-named non-persistent Electron session with `cache: false`; do not reuse Chromium's cached certificate verdicts.
+   - Accept only the configured hostname and matching canonical `sha256/<base64 SHA-256 of DER>` fingerprint; hash certificate DER when available, otherwise normalize Chromium's SHA-256 fingerprint. Reject other hosts, mismatches and retired callbacks with `-2`. Probing uses a temporary rejecting session, and re-pinning re-probes before accepting the user-confirmed fingerprint.
    - Requests: `ses.fetch(`${url}/graphql`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(10_000) })`.
    - Error classes: `TLS` (`net::ERR_CERT_*`), `NETWORK` (refused, unreachable, timeout), `AUTH` (401/403), `RATE_LIMITED` (429), `SERVER` (5xx), `GRAPHQL` (`errors[]`).
    - Connection-state machine: `NOT_CONFIGURED | CONNECTED | RECONNECTING{nextRetryAt} | AUTH_FAILED | TLS_MISMATCH`. Retry backoff 5, 10, 30, 60 s.
 5. **Settings** (`src/main/settings-store.ts`).
    - `userData/settings.json`: `{ backendUrl, pinnedFingerprint }`.
-   - The token is encrypted with `safeStorage.encryptString` (DPAPI) into `userData/token.bin`. If `isEncryptionAvailable()` is false, refuse to save.
+   - `userData/token.bin` is an OS-encrypted JSON credential `{backendUrl, pinnedFingerprint, token}` bound to both settings values, not an unbound token string. Re-pinning deletes the old credential; without `safeStorage.isEncryptionAvailable()`, saving is refused.
 6. **IPC** (`src/main/ipc.ts`, `src/preload/index.ts`).
    - The preload exposes `window.solar = { query(op, vars), settings: { get, probeCertificate, pinCertificate, saveToken, clear }, onConnectionState(cb) }`.
    - Each handler checks `event.senderFrame.url` (`app://renderer/` or the dev URL) and validates its payload with zod: `op` must be in `OPERATIONS`; `vars` must be JSON ≤ 64 KB; the URL must be `https://` with an IP or hostname. Unknown channels don't exist.
@@ -426,6 +428,8 @@ Seed rows are below. Every cell marked "verify" is filled from Phase 1/4 data.
    - Polling: `liveStatus` every 10 s, `collectorStatus` every 30 s, everything else on demand.
    - When unreachable, keep the last data and grey it out, showing the banner "Backend unreachable since HH:MM — last data HH:MM:SS (X min ago). Collection runs on the NAS independently of this app."
    - Freshness uses the server-computed `ageSeconds`, so the PC clock doesn't matter.
+   - Ordinary and infinite query keys include a credential-free connection epoch. Forgetting/replacing a backend cancels/removes old cache before the new epoch reads data. Meter-reading pagination follows `endCursor`/`hasNextPage`; load-more is disabled during fetch, and failed next pages preserve loaded rows and the retry cursor.
+   - Saving a replacement token immediately publishes `CONNECTED(UNKNOWN)` after authenticated status succeeds; ADMIN controls stay hidden until the role of that token is verified. Role retries after ordinary query success are detached and generation/token-fenced; old-token completions cannot grant controls.
    - **Added by M7 (implementation record).** The backend gained read-only queries `viewerRole: String!` (so the app can hide mutating controls for VIEWER tokens), `tariffHolidays(tariffId, year)`, `tariffMonthlyRates(tariffId)`, `dataExclusions(first)` (so Settings can show current values) and `collectorStatus.siteTimezone` (so day ranges follow the site zone, not the PC zone). The preload is built as CommonJS (`preload/index.cjs`): a sandboxed preload cannot be an ES module. The token is stored in one encrypted blob bound to the backend URL and certificate fingerprint; re-pinning deletes the token first. DevTools are off and Electron fuses (`runAsNode`, `NODE_OPTIONS`, `--inspect` off; asar-only) are set in the packaged build; `ELECTRON_RENDERER_URL` is honoured only in unpackaged development. `win.signAndEditExecutable: false` avoids a Windows symlink-privilege failure while extracting `winCodeSign` (the installer is unsigned anyway, so the executable carries default Electron metadata and icon).
 10. **Packaging.** `electron-builder.yml`: `appId: com.captainslow.housesolar`; `win.target: nsis` (x64); `nsis.oneClick: false`, `perMachine: false`; `asar: true`; no auto-update. The installer is unsigned, so SmartScreen will warn (this is documented).
 
@@ -457,8 +461,9 @@ model CollectorRun { id Int @id  startedAt DateTime  endedAt DateTime?  appVersi
 model MappingVersion { version Int @id  config Json  provisional Boolean  note String  createdAt DateTime }
 model RawPoll      { id BigInt @id @default(autoincrement())  runId Int  seq Int  deviceId Int  tier PollTier
                      requestedAt DateTime  receivedAt DateTime  observedAt DateTime
+                     monotonicMs Float?  acquisitionClockStep Boolean?  acquisitionMeterRepeatSec Int? /* immutable FAST facts; NULL = legacy/non-FAST, not inferred timing */
                      blocks Bytes /* per block: fc u8, start u16, count u16, ok u8, words u16[] */  contentHash Bytes
-                     @@unique([runId, seq])  @@index([deviceId, observedAt]) }
+                     @@unique([runId, seq])  @@index([deviceId, observedAt])  @@index([deviceId, runId, seq]) }
 model Sample       { id BigInt @id @default(autoincrement())  rawPollId BigInt @unique  deviceId Int  observedAt DateTime  mappingVersion Int
                      meterLink Int?  gridW Int?  gridAW Int?  gridBW Int?  gridCW Int?  gridVoltA Decimal? @db.Decimal(5,1) /* B, C likewise */
                      gridPortW Int? /* 2165 as read */  inverterAcW Int?  epsW Int?  pvW Int?  pvStringW Int[]
@@ -479,6 +484,8 @@ model EnergyInterval { bucketStart DateTime @id @db.Timestamptz(0) /* UTC, 300 s
                        gridImportNetWh Decimal? @db.Decimal(12,3)  /* likewise: */ gridExportNetWh gridImportPhaseWh gridExportPhaseWh gridImportCounterWh gridExportCounterWh
                        pvIntWh pvCounterWh batChargeIntWh batDischargeIntWh batChargeCounterWh batDischargeCounterWh loadDerivedWh loadCounterWh
                        gridCoveredSec Int  pvCoveredSec Int  batCoveredSec Int  loadCoveredSec Int   /* 0..300 */
+                       socCoveredSec Int? /* independent valid occupied 10-s SOC slots; NULL = unreconstructed historical evidence */
+                       gridPhaseCoveredSec Int? /* seconds where all three normalized phases were valid = METER_PER_PHASE coverage; NULL = stored before 0006, readers fall back to gridCoveredSec */
                        counterUnknownSec Int[] /* 6 entries, CounterKey order PV,GRID_BUY,GRID_SELL,BAT_CHARGE,BAT_DISCHARGE,LOAD_USE */
                        counterGapAllocMask Int  flags Int  counterState Json? /* end-of-bucket per-counter state: last accepted value/time, segment, pending candidates; seeds recovery */
                        gridAvgW Int? gridMinW Int? gridMaxW Int? pvAvgW Int? pvMaxW Int? batAvgW Int? loadAvgW Int? loadMaxW Int? socMin Int? socMax Int? socLast Int? }
@@ -504,6 +511,8 @@ model ApiToken { id Int @id  name String @unique  role TokenRole  tokenHash Byte
 Data-model rules:
 - **Null vs zero.** A null Wh or W means unknown. `0` means a measured zero.
 - **Units.** All W values are Int. Energies are Wh `Decimal(12,3)` internally and kWh `Decimal` strings (3 dp) in GraphQL. Money is `Decimal(12,2)`. Rates are `Decimal(12,6)`, stored as strings inside the rules JSON.
+- **Precision.** Integrate exact millisecond intervals; round each stored bucket Wh to `Decimal(12,3)`. Sum persisted fractional Wh as Decimal and round final `energyTotals` kWh once to three decimals. Whole covered seconds are separately floored after millisecond-noise snapping; this never truncates energy. Individually rounded counter allocations need not conserve an unrounded delta exactly.
+- **Bucket mapping provenance.** `EnergyInterval.mappingVersion` represents the last original observation strictly before the bucket end (including the seed), falling back to the first future observation only without a predecessor. Each Sample retains its own mapping for validity; a mixed-mapping bucket is not reinterpreted under a single representative mapping.
 - **Deduplication.**
   - `Sample` is unique on `(deviceId, observedAt)` and `RawPoll` on `(runId, seq)`, never on timestamp alone.
   - A repeated device sample (unchanged 1800–1827 words) is still stored as a new observation. It is distinguished by `meterRepeatSec` and becomes `METER_STALE` beyond `maxRepeatSpanSec`.
@@ -512,10 +521,12 @@ Data-model rules:
 - **Retention.**
   - `RawPoll` and `Sample` are kept 400 days. That covers a full year plus one billing cycle, which is the re-normalization horizon.
   - `EnergyInterval`, billing tables, readings, and events are kept forever.
-  - Expected steady-state DB size is about 5–6 GB (raw ≈ 9.5 MB/day, samples ≈ 3 MB/day, intervals ≈ 26 MB/year).
-- **Recompute horizon.** Ledger recomputation (including calculation-parameter changes and `RENORMALIZE`) is limited to buckets within `SAMPLE_RETENTION_DAYS` (`RAW_RETENTION_DAYS` for `RENORMALIZE`). Older buckets keep their stored values and flags; only tariff/billing re-evaluation from intervals is possible for them.
+  - The original 5–6 GB estimate is superseded by a historical synthetic measurement: the 400-day mixed-tier fixture occupied **10,165,166,607 bytes before ledger generation**, with **3,772,340,636 encoded payload bytes** (`docs/operations.md:369`). This is not a measured NAS steady-state size; allow separate headroom for WAL/growth, durable intervals/events, backups and retained pre-upgrade archives, and size from actual site measurements.
+- **Recompute horizon.** Ordinary recomputation and algorithm upgrades use `SAMPLE_RETENTION_DAYS`; explicit RENORMALIZE rebuilds Samples within `RAW_RETENTION_DAYS`. Below the sample cutoff, only requested RUNNING rebuilt windows are writable when raw retention is longer; other history stays authoritative. Use the complete Phase 4.4 retention/propagation rules, including fixed raw-horizon run ranges versus normal following-propagation ranges under equal retention. Deleted evidence is not reconstructible; unsupported historical buckets retain their values and provenance.
 
 ## GraphQL contract outline
+
+The checked-in current code-first SDL is `apps/backend/schema.gql`, consumed by `packages/contracts/codegen.ts`. The A1-only `SNAPSHOT`, `VendorLive`, `VendorDay`, `vendorLive` and `vendorDaily` entries below are deferred design, not implemented API or acceptance. Recorded M7 read-only additions are included below. The 2026-10-24 contract decisions (defaulted arguments, `powerSeries` cap, `collectorStatus` metadata, meter-total `METER_NET`) are recorded in the rules below; an outline is not proof of runtime behaviour.
 
 ```graphql
 scalar DateTime    # ISO-8601 UTC
@@ -539,7 +550,7 @@ type VendorDay  { date: LocalDate!  provenance: Provenance!  solarKwh: Decimal  
 type OperatingMode { code: Int!  label: String!  observedAt: DateTime! }
 type CollectorStatus { acquisitionSource: String! /* MODBUS|CLOUD|NONE */  state: String!  lastSuccessAt: DateTime  lastErrorAt: DateTime  lastError: String  consecutiveFailures: Int!  nextRetryAt: DateTime
                        device: Device  mappingVersion: Int!  policyVersion: Int!  calcVersion: Int!  monitoringSince: DateTime
-                       lastBackupAt: DateTime  tlsCertExpiresAt: DateTime! }
+                       siteTimezone: String!  lastBackupAt: DateTime  tlsCertExpiresAt: DateTime! }
 type EnergyValue { kwh: Decimal  provenance: Provenance!  source: String!  validated: Boolean!  coverage: Decimal!  status: ValueStatus!  flags: [String!]! }
 type WindowEnergy { window: String!  importKwh: EnergyValue!  exportKwh: EnergyValue! }
 type EnergyRow   { periodStart: LocalDate!  periodEnd: LocalDate!
@@ -560,16 +571,20 @@ type Query {
   vendorLive: VendorLive            # cloud track only (Amendment A1); null unless acquisitionSource = CLOUD
   vendorDaily(fromDate: LocalDate!, toDate: LocalDate!): [VendorDay!]!   # <= 366 days
   collectorStatus: CollectorStatus!
-  powerSeries(from: DateTime!, to: DateTime!, metrics: [PowerMetric!]!, maxPoints: Int = 1000): PowerSeries!   # to-from <= 366 d; maxPoints <= 2000
+  viewerRole: String!
+  tariffHolidays(tariffId: Int!, year: Int!): [TariffHoliday!]!
+  tariffMonthlyRates(tariffId: Int!): [TariffMonthlyRate!]!
+  dataExclusions(first: Int! = 100): [DataExclusion!]!   # <= 200; bounded list, not a Relay connection
+  powerSeries(from: DateTime!, to: DateTime!, metrics: [PowerMetric!]!, maxPoints: Int! = 1000): PowerSeries!   # to-from <= 366 d; 1 <= maxPoints <= 2000
   energyTotals(fromDate: LocalDate!, toDate: LocalDate!, granularity: Granularity!, tariffId: Int): EnergyTotals! # inclusive LocalDate endpoints; <= 1000 rows; explicit tariff enables gridByWindow, no implicit selection
-  billingPeriods(first: Int = 24, after: String): BillingPeriodConnection!                                    # first <= 100
+  billingPeriods(first: Int! = 24, after: String): BillingPeriodConnection!                                   # 1 <= first <= 100
   billingPeriod(id: Int!): BillingPeriod
-  meterReadings(first: Int = 50, after: String): MeterReadingConnection!
+  meterReadings(first: Int! = 50, after: String): MeterReadingConnection!                                     # 1 <= first <= 100
   reconciliation(fromReadingId: Int!, toReadingId: Int!): Reconciliation!   # one row per candidate source
   dataQualityEvents(from: DateTime!, to: DateTime!, kinds: [String!], first: Int = 100, after: String): DataQualityEventConnection!
   tariffs: [Tariff!]!
   accountingPolicies: [AccountingPolicy!]!
-  calculationRuns(first: Int = 20, after: String): CalculationRunConnection!
+  calculationRuns(first: Int! = 20, after: String): CalculationRunConnection!                                 # 1 <= first <= 100
   devices: [Device!]!
 }
 type Mutation {   # ADMIN only; none touch the device
@@ -587,10 +602,11 @@ type Mutation {   # ADMIN only; none touch the device
 
 Contract rules:
 - **Pagination.** Relay connections with an opaque base64 cursor of `id`.
-- **`powerSeries` downsampling.** Bucket width is the smallest of [10 s, 30 s, 60 s, 300 s, 900 s, 3600 s, 10800 s, 86400 s] that is ≥ (to − from)/maxPoints.
+- **Defaulted arguments.** `powerSeries.maxPoints`, `billingPeriods.first`, `meterReadings.first` and `calculationRuns.first` are non-null with a schema default (`Int! = 1000/24/50/20`): omitting the argument uses the default, while an explicit `null` is invalid: a literal `null` fails GraphQL query validation, and a `null` variable fails variable coercion (`Argument "maxPoints" must not be null`) before the resolver runs, though the error code can differ between the two paths. `dataQualityEvents.first` is the deliberate exception: it stays nullable (`Int = 100`), so omission and an explicit `null` both mean 100.
+- **`powerSeries` downsampling.** `maxPoints` is a hard maximum on points per metric; every supported request (0 < to − from ≤ 366 d, integer 1 ≤ maxPoints ≤ 2000) is answered, covering the whole `[from, to)` with epoch-aligned or ledger-aligned buckets, never truncated. Bucket width is the smallest of [10 s, 30 s, 60 s, 300 s, 900 s, 3600 s, 10800 s, 86400 s] whose epoch-aligned bucket count `ceil((to − floor(from/width)·width)/width)` is ≤ maxPoints (an unaligned `from` can add one bucket over (to − from)/width). If no table width fits (for example an epoch-unaligned 366-day span with maxPoints below 367, or maxPoints = 1 with a window crossing a boundary of every width), the grid is anchored at the 300 s ledger boundary at or before `from` and uses the smallest whole multiple of 300 s whose count is ≤ maxPoints. `bucketSeconds` is that width (an `Int`). For an epoch-aligned table width, the first bucket starts less than `bucketSeconds` before `from`; for the fallback grid, it starts less than 300 s before `from`. Coverage and gaps are clipped to the requested range.
   - Widths < 300 s aggregate `Sample` rows within retention.
   - Widths ≥ 300 s aggregate `EnergyInterval` statistics for the metrics it stores (PV, LOAD, GRID, BATTERY, SOC). `EnergyInterval` has no per-phase, vendor-load or inverter-AC statistics, so `GRID_A/B/C`, `LOAD_VENDOR` and `INVERTER_AC` are aggregated from `Sample` at every width (SQL `avg/min/max`), valid only within `SAMPLE_RETENTION_DAYS`; older points are null and listed in `gaps`.
-  - Every point has avg/min/max/coverage; a coverage-0 point is null and also appears in `gaps`.
+  - Every point has nullable avg/min/max and coverage. Fine SOC counts distinct valid occupied ten-second observation slots. Coarse SOC has `avg = null`, independent `socCoveredSec`, and whole-bucket extrema; partial historical buckets use conservative covered seconds `max(0, queriedSeconds - (300 - socCoveredSec))`. Historical NULL coverage remains unknown: the API exposes no invented coverage and includes a gap, but can retain known SOC min/max even at coverage 0. Other coverage-0 points have null statistics.
   - Metrics must be a nonempty list of at most ten supported entries before database work; bounded duplicates are deduplicated in selection order. Repetition cannot multiply point allocation beyond the supported metric count.
   - `energyTotals` window breakdowns require an explicit `tariffId` and effective versions covering the requested window; tariff-local windows/holidays classify each bucket, while result rows retain site-local dates. Omission leaves `gridByWindow` empty rather than guessing a tariff. `vendor.lifetime` is the final raw counter reading in the range (includes pre-monitoring, unvalidated); `vendor.intervalDelta` is the separately labelled within-range last-minus-first comparison.
 
@@ -611,7 +627,9 @@ Contract rules:
 | Family | Invalid when |
 |---|---|
 | Grid | `METER_LINK_DOWN \| METER_COMM_FAULT \| METER_STALE \| BLOCK_INVALID_1800 \| CLOCK_STEP` |
-| PV, battery | `BLOCK_INVALID_0 \| CLOCK_STEP` |
+| PV | `BLOCK_INVALID_0 \| CLOCK_STEP` |
+| Battery power | selected Sample mapping only: `BLOCK_INVALID_1800` for `BMS_1914`, or `BLOCK_INVALID_0` for `BAT1_POWER_G3_50`; plus `CLOCK_STEP` |
+| SOC | `BLOCK_INVALID_1800 \| CLOCK_STEP`, independently of the battery-power source; BATTERY/ALL exclusions also apply |
 | Load | grid invalid, `BLOCK_INVALID_0`, or `NEGATIVE_DERIVED_LOAD` (`P_house` < −50 W; values in [−50, 0) are integrated as-is, never clamped) |
 | Counters | `BLOCK_INVALID_2000` |
 
@@ -625,9 +643,9 @@ Contract rules:
   - Import and export are never netted against each other.
 - **Bucket boundaries** inside an interval are split by linear interpolation of P at the boundary. Wh = W·s/3600.
 - **Grid netting modes.**
-  - `METER_NET` applies the split to the per-sample Σφ P_grid,φ.
-  - `METER_PER_PHASE` applies it per phase and sums the directional results.
-  - Both are always stored.
+  - `METER_NET` applies the directional split to the normalized external-meter **total** P_grid (register 1814, `Sample.gridW`) for each integration interval. It is never derived from the phases: if the total is unknown or invalid for an interval, that interval is unknown for `METER_NET` (grid gap) even when all three phases are valid.
+  - `METER_PER_PHASE` applies the split to each normalized phase P_grid,φ (1808/1810/1812) and sums the directional results. It needs all three phases and never falls back to the total. `METER_PER_PHASE` has its own coverage column, `gridPhaseCoveredSec` (migration `0006_grid_phase_coverage`): the seconds in which all three normalized phases were valid, exactly the time `gridImportPhaseWh`/`gridExportPhaseWh` integrate (the minimum over the phases, never a sum). `gridCoveredSec` stays the meter-total coverage; totals, reconciliation and billing use the coverage of the active grid candidate (`METER_NET` → `gridCoveredSec`, `METER_PER_PHASE` → `gridPhaseCoveredSec`, `INVERTER_COUNTER` → counter coverage). With the total missing and all three phases valid, `METER_PER_PHASE` reads full coverage while `METER_NET` reads 0 s; with the total valid and a phase missing it is the reverse. `gridPhaseCoveredSec` is NULL for rows stored before the migration (unknown, not zero): readers fall back to `gridCoveredSec` for them until ordinary ledger recomputation rewrites the bucket, and recovery verification ignores a stored NULL in this column so it never rewrites old buckets by itself. `LEDGER_ALGO_VERSION` (3) and `BILLING_CALC_VERSION` (2) are unchanged. The shared `GRID_GAP` flag is still raised by a gap in the total or in any phase, so it can over-report a gap for the active candidate but never hides one.
+  - The two candidates are independent inputs and can differ (opposite phase flow; a reported total that is not the phase sum). Both are always stored (`gridImportNetWh`/`gridExportNetWh`, `gridImportPhaseWh`/`gridExportPhaseWh`). These definitions record software semantics, not verified physical accuracy; signs, CT location and cadence stay provisional until G3/G5/G6.
 - **Uncertainty.** Meter/CT accuracy class (unknown; a typical class-1 meter is ±1%), plus sampling error quantified in G4 (2-s vs 10-s integration), plus 1 W quantization. The stated per-source text lives in `docs/field-mapping.md`.
 
 **Counters** (`counters.ts`, per `CounterKey`, Wh, accepted readings only).
@@ -653,7 +671,7 @@ For each new reading, with d = v − v_last:
 
 | Quantity | Default policy v1 | Changes when |
 |---|---|---|
-| Grid import/export | `METER_NET`: closest to the utility boundary, independent of the vendor counters the technician distrusts | G6 shows only another candidate within tolerance (`METER_PER_PHASE` or `INVERTER_COUNTER`) |
+| Grid import/export | `METER_NET`: the external meter's own total (register 1814), closest to the utility boundary, independent of the vendor counters the technician distrusts | G6 shows only another candidate within tolerance (`METER_PER_PHASE` or `INVERTER_COUNTER`) |
 | PV | `COUNTER`, if the G5 counter/integration ratio is within 0.95–1.05 | Otherwise `INTEGRATED`. Seeded policy v1 (before any G5 data exists) uses `INTEGRATED` with `validated: {}`; G5 then creates a new version |
 | Battery | `COUNTER`, if the G5 counter/integration ratio is within 0.95–1.05 | Otherwise `INTEGRATED` (seeded v1: `INTEGRATED`, as for PV) |
 | Load | `DERIVED` | — |
@@ -774,19 +792,19 @@ No savings estimate is built (it was not requested).
 
 ## Deployment and operations
 
-**Stack pins** (registry values as of 2026-10-15; pin exact versions in the lockfile):
+**Stack pins** (implementation selections read from manifests, not a fresh registry survey; the original registry survey was 2026-10-15):
 
 | Component | Version |
 |---|---|
 | Node | 24 LTS (`node:24-bookworm-slim` by digest) |
-| TypeScript | latest 6.0.x (`@nestjs/graphql` 14 peers ^5.5 \|\| ^6) |
-| NestJS | @nestjs/core/common 12.1.x; @nestjs/graphql 14.0.3; @nestjs/apollo 14.0.3 |
-| GraphQL | @apollo/server 5.5.1; graphql **16.x ≥ 16.11** (Apollo 5 does not support 17); graphql-scalars 2.0.1; custom fragment-aware depth rule (Phase 2.10) |
-| Health / logging | @nestjs/terminus 12.1.0; nestjs-pino 5.3.1; pino 10.4.0 |
-| Prisma | prisma / @prisma/client / @prisma/adapter-pg **7.10.1** (8.x is RC); pg 8.23.1 |
-| Libraries | modbus-serial 8.0.25; decimal.js 10.6.0; luxon 3.7.2; zod 4.6.7; selfsigned (latest) |
+| TypeScript | 6.0.3 (`@nestjs/graphql` 14 peers ^5.5 \|\| ^6) |
+| NestJS | @nestjs/core/common 12.1.3; @nestjs/graphql 14.0.3; @nestjs/apollo 14.0.3 |
+| GraphQL | @apollo/server 5.5.1; graphql **16.14.2** (Apollo 5 does not support 17); graphql-scalars 2.0.1; custom fragment-aware depth rule (Phase 2.10) |
+| Health / logging | Custom `src/health/health.module.ts` (no @nestjs/terminus dependency); nestjs-pino 5.3.1; pino 10.4.0 |
+| Prisma | prisma / @prisma/client / @prisma/adapter-pg **7.10.1**; pg 8.23.1 |
+| Libraries | modbus-serial 8.0.25; decimal.js 10.6.0; luxon 3.7.2; zod 4.6.7; selfsigned 5.5.0 |
 | Tests | vitest 5.0.4 |
-| Desktop | electron 44.7.2; electron-vite 6.0.0; electron-builder 26.15.3; vite 8.3.4; react 19.3.1; @tanstack/react-query 5.104.3; echarts 6.1.0 |
+| Desktop | electron 44.7.2; electron-vite 6.0.0; electron-builder 26.3.1; vite 8.3.4; react 19.3.1; @tanstack/react-query 5.104.3; echarts 6.1.0 |
 | Database image | `postgres:18.6-bookworm` (digest pinned in compose) |
 
 **`deploy/truenas/compose.yaml`** (TrueNAS Install via YAML). `POOL` and the tag are placeholders. In YAML, `$` inside commands must be written `$$`.
@@ -807,7 +825,7 @@ No savings estimate is built (it was not requested).
   - `image: ghcr.io/captain-slow/house-solar-backend:<semver>`; `user: "568:568"`; `init: true`; `restart: unless-stopped`; `stop_grace_period: 30s`; `mem_limit: 512m`
   - `depends_on: migrate: service_completed_successfully`
   - `ports: ["NAS_IP:8443:8443"]` (published on the NAS's trusted LAN address only, not `0.0.0.0`; `NAS_IP` is a compose placeholder like `POOL`)
-  - env from the env schema with `SITE_TIMEZONE=Asia/Kuala_Lumpur`, `TZ=UTC`, `DATABASE_URL=postgresql://solar@db:5432/solar`, `DATABASE_PASSWORD_FILE=/run/secrets/db_password`, `DEVICE_KEY=inverter-1`, `EXPECTED_MODEL=HIT-10L-G3`; `secrets: [db_password]`
+  - env from the env schema with `SITE_TIMEZONE=Asia/Kuala_Lumpur`, `TZ=UTC`, `DATABASE_URL=postgresql://solar@db:5432/solar`, `DATABASE_PASSWORD_FILE=/run/secrets/db_password`, `DEVICE_KEY=inverter-1`, `EXPECTED_MODEL=HIT-10L-G3`, `COLLECTOR_ENABLED=false` initially (`COLLECTOR_SOURCE` defaults to `MODBUS`); `secrets: [db_password]`
   - volumes: `.../tls:/data/tls`, `.../backups:/backups:ro`
   - `healthcheck: ["CMD", "node", "dist/cli/healthcheck.js"]`, interval 30 s
   - `networks: [internal, lan]`
@@ -821,13 +839,14 @@ No savings estimate is built (it was not requested).
     3. On Sundays, copy to `/backups/weekly/`.
     4. Keep the newest 7 daily and 4 weekly dumps. `pre-upgrade/` dumps are never pruned automatically.
   - `backup.sh once pre-upgrade <tag>`: the same step 2 with its own per-invocation password file, writing `/backups/pre-upgrade/solar-<tag>-<YYYYMMDD-HHMMSS>-<8 hex>.dump` (unique per invocation) and logging `BACKUP OK` on success.
+  - Publication requires hard-link support on the actual backups mount. Daily/weekly copy and startup partial cleanup assume exactly one daemon. Startup removes leftover daily/weekly partials; pre-upgrade partials require manual cleanup only after confirming no backup is running. SIGKILL/power loss can bypass traps. NAS filesystem/permission behaviour and an unattended natural 03:30 run remain unverified.
 - **`networks:`** `internal: { internal: true }` (no egress; the DB is never published), `lan: {}` (published port plus Modbus egress).
 - **`secrets:`** `db_password: { file: /mnt/POOL/apps/house-solar/secrets/db_password }`.
 
 **Restart and recovery semantics.**
 - `unless-stopped` plus TrueNAS app auto-start covers NAS reboots. The collection gap during a reboot is recorded; counters bridge the energy (with TOU flagged).
 - **Modbus or network outage:** the backend stays healthy and the collector backs off up to 5 min.
-- **DB outage:** `/readyz` returns 503 and the process stays up. Collection does **not** continue through it: when the lock session's heartbeat fails for `OWNERSHIP_LEASE_SEC` (15 s) the collector stops Modbus requests, closes the socket, and shows `LOCK_NOT_HELD` until it re-acquires the lock. Polls already collected stay in the ≤ 360-poll buffer and are flushed idempotently when the DB returns. The outage is a recorded `DB_UNAVAILABLE` gap; valid counters bridge the energy over it.
+- **DB outage:** `/readyz` returns 503 and the process stays up. Collection does **not** continue through it: when the lock session's heartbeat fails for `OWNERSHIP_LEASE_SEC` (15 s) the collector stops Modbus requests, closes the socket, and shows `LOCK_NOT_HELD` until it re-acquires the lock. Polls already collected stay in the queue (360 FAST polls plus 64 status polls, including pending writes) and are flushed idempotently when the DB returns. The outage is a recorded `DB_UNAVAILABLE` gap; valid counters bridge the energy over it.
 - **The process exits only on** invalid config (78) or an uncaught error (1, which triggers a restart).
 - **Credential expiry.**
   - Modbus track: there are no vendor credentials. Cloud stopgap (A1): the user-supplied credential or token lives only in a NAS secret, expiry yields `AUTH_FAILED` (VC3).
@@ -863,9 +882,9 @@ No savings estimate is built (it was not requested).
 - ZFS snapshots and replication of the `backups` dataset are recommended. Snapshots of `pgdata` are not treated as a validated backup.
 
 **Resources and storage.**
-- Backend: < 5% of one core average, RAM 200–350 MB (limit 512 MB).
-- Postgres: RAM 256–512 MB (limit 1 GB).
-- Disk: about 6 GB DB at steady state, plus about 11 dumps (measure the actual dump size after 30 days; lower the `*_RETENTION_DAYS` values if space is tight).
+- Backend: CPU/steady-state RAM are site-sizing estimates [INFERENCE], not measured NAS limits. The historical 400-day populated replay sampled 386,478,080 bytes RSS; terminal recovery sampled 393,965,568 bytes. These workloads do not establish steady-state collection usage or a throughput guarantee. Shipping limit remains 512 MB.
+- Postgres: 256–512 MB is a planning estimate [INFERENCE], not measured NAS demand; shipping limit remains 1 GB.
+- Disk: do not budget from the old 6 GB estimate. See the measured synthetic 400-day size under Data-model rules. Budget database growth/WAL plus 7 daily and 4 weekly dumps, unbounded-by-policy pre-upgrade archives and safety headroom; confirm actual space and retention choices before deployment.
 
 **Security.**
 - Access is LAN-only. Port 8443 is HTTPS with a pinned self-signed certificate. Bearer tokens are hashed at rest. ADMIN vs VIEWER roles apply. Failed-auth throttling is on. CORS is off (it is not authentication). Logs are redacted.
@@ -933,11 +952,11 @@ No savings estimate is built (it was not requested).
 | F10 | `maxGapSec` vs selection (ledger candidates only; acquisition-source changes are configuration, see A1) | Phase 4.5, Data model (`maxGapSecUsed`, `AccountingPolicy`), Accounting validity, V6, V27 |
 | F11 | Cost lower bounds (never true for cloud-derived input, see Pricing step 6) | Pricing step 6, GraphQL `BillingPeriodResult`, Phase 6 Usage & Cost, V28 |
 
-Status: these are document corrections verified against the cited sources at the time of writing. Later work: M1 built and reviewed (no hardware); Amendment A1 and the second plan review (2026-10-17) added the cloud-stopgap contract and fixed the review findings recorded in the Amendments section. None of V19–V28 has been run against hardware or a built image.
+Status: the original M1/2026-10-17 document-review history is retained as history, not current acceptance. `docs/operations.md` records local software/replay, built-image V19, backup-authentication, and current/0002 restore drills, including 2026-10-23 follow-ups. None is fresh verification by this plan reconciliation, and none proves NAS, physical accuracy, installed NSIS or real-bill acceptance. Use the per-item recorded acceptance snapshot below, not a blanket pass.
 
 ## Critical files and anchors
 
-- `apps/backend/src/modbus/register-map.ts`: the only place register addresses, types, and scales exist. Ported from the library @78c620d with MIT attribution; must stay in sync with `docs/field-mapping.md`.
+- `apps/backend/src/modbus/register-map.ts`: mapped field addresses, types and scales, ported from the library @78c620d with MIT attribution; `read-plan.ts` separately defines bulk reads. Keep the catalog consistent with `docs/field-mapping.md`.
 - `apps/backend/src/accounting/integrate.ts`: directional trapezoid with zero-crossing and bucket splitting. Every energy figure depends on it.
 - `apps/backend/src/accounting/counters.ts`: the reset/jump/wrap/discontinuity state machine. It decides which counter energy is known and which is unknown.
 - `apps/backend/src/tariff/engine.ts`: the pure billing engine. Its bill-reproduction test is the authority on TNB rule flags.
@@ -957,7 +976,7 @@ Prerequisites:
 |---|---|---|
 | V1 | Known-energy integration (P4.1) | Constant 1000 W for 3600 s with jittered 7–13 s sample spacing → 1000.000 Wh ± 0.001. The same stream with a 45-s hole → 987.5 Wh ± 0.1 (12.5 Wh missing), GAP flag on the overlapped bucket(s), covered seconds 3555 |
 | V2 | Sign reversal (P4.1) | +2000 W → −2000 W linearly across one 10-s interval → zero crossing at 5 s; import 1.389 Wh, export 1.389 Wh (not netted to 0) |
-| V3 | Three-phase netting (P4.1) | φA +1000, φB +1000, φC −1500 W for 1 h → `METER_NET` import 500 Wh, export 0. `METER_PER_PHASE` import 2000 Wh, export 1500 Wh |
+| V3 | Meter-total NET vs per-phase netting (P4.1) | φA +1000, φB +1000, φC −1500 W for 1 h. Meter total 1814 = +500 W (equal to the phase sum) → `METER_NET` import 500 Wh, export 0; `METER_PER_PHASE` import 2000 Wh, export 1500 Wh. Same phases with a deliberately different meter total of −300 W → `METER_NET` import 0, export 300 Wh (not the +500 W phase sum) while `METER_PER_PHASE` stays 2000 / 1500 Wh; a total of +1200 W → `METER_NET` import 1200 Wh, export 0. Total unavailable with valid phases → `METER_NET` unknown (GRID_GAP, 0 covered s), `METER_PER_PHASE` energy still 2000 / 1500 Wh with its own full `gridPhaseCoveredSec` coverage while `METER_NET` coverage is 0 s; a phase unavailable with a valid total → `METER_PER_PHASE` unknown with `gridPhaseCoveredSec` 0, `METER_NET` unaffected at full coverage |
 | V4 | Counter reset and jump (P4.2) | 1000.0 → 1000.5 → 0.2 → 0.4 kWh: counted 0.5 + 0.2 = 0.7 kWh, `COUNTER_RESET`, the reset interval unknown. 1000.0 → 1000.1 → 33768.5 → 1000.2: counted 0.2 kWh, `COUNTER_JUMP_REJECTED`. Wrap near 2³²·100 Wh: correct small delta. **Units:** 500 Wh over 30 min on GRID_BUY (1 kW) is accepted (limit 1000·60·0.5 + 200 = 30,200 Wh); a 31,000 Wh jump over the same 30 min → `COUNTER_JUMP_REJECTED`. The same `limit()` is applied to baseline confirmation, reset/discontinuity confirmation, and post-wrap deltas |
 | V5 | Duplicates / out-of-order (P2.6, P4.4) | Ingest the same 360 polls twice → 360 `Sample` rows. Running ledger recompute twice → identical `EnergyInterval` rows (equal hash of all Wh columns). `observedAt` going backwards within a run → `CLOCK_STEP`, interval excluded |
 | V6 | Source switching (P4.5) | Policy v2 `INVERTER_COUNTER` effective at T. A range spanning T sums meter buckets before T and counter buckets after T. Totals equal the sum of the two sub-ranges (no double count). A retroactive v3 at the first sample supersedes v2. None of these creates a `CalculationRun`; only overlapping `BillingPeriodResult`s are invalidated |
@@ -975,19 +994,92 @@ Prerequisites:
 | V18 | Bill reproduction (P5.7) | Each bill fixture is reproduced within RM 0.01 per line and in total. The selected rule flags are recorded in `TariffVersion.sourceNote` |
 | V19 | Migration startup (P2.14, P3.3) | Built image, `internal` network only, secret at `/run/secrets/db_password`, no password in `DATABASE_URL`: `migrate` applies all migrations to an empty database and exits 0 (exercises `prisma.config.ts` and `src/config/database-url.ts` inside the runtime image, with a password containing `+ / =`); `backend` starts only afterwards. With a wrong password file, `migrate` exits non-zero and `backend` never starts |
 | V20 | Unattended backup authentication (P3) | `db` requires password auth and `db-backup` has no `PGPASSWORD`: the 03:30 loop and `backup.sh once pre-upgrade <tag>` both produce a listable `.dump` via their own `/run/pg/pgpass.*` files (0600). Running the pre-upgrade command with `docker exec` inside the live daemon container leaves the daemon's next scheduled dump successful. With a file at 0640, libpq ignores it, the backup logs `BACKUP FAILED`, no `.partial` remains, and nothing hangs on a prompt. Container logs, `docker inspect` (env/args), and `ps` output contain no password string |
-| V21 | Older-schema restore (P3.5) | Dump taken at migration `0002`; upgrade to `0003`; restore the `0002` dump into an empty `template0`-based database with no `--clean`: no `0003` objects exist after restore; `migrate deploy` then applies exactly `0003`; backend starts and `/readyz` is 200. Recorded counter-example: `--clean --if-exists` over the `0003` database would leave `0003` tables behind with an older `_prisma_migrations` |
+| V21 | Older-schema restore (P3.5) | Dump taken at migration `0002`; upgrade to the current schema; restore the `0002` dump into an empty `template0`-based database with no `--clean`: only archived migration history/objects exist before upgrade. `migrate deploy` then applies exactly all pending migrations (currently `0003_tariff`, `0004_raw_poll_monotonic`, `0005_soc_coverage`, `0006_grid_phase_coverage`, in order; the recorded drills below predate 0006 and the restore drill has not been rerun for it); backend starts and `/readyz` is 200. Historical counter-example: `--clean --if-exists` over a newer database leaves newer objects absent from the archive beside older `_prisma_migrations` |
 | V22 | Valid high PV voltage (P1.6) | FAST block with PV1 = 820.0 V, PV2 = 760.0 V, AC 230 V, battery 52 V, SOC 52 → no retry, block valid, PV/battery/inverter fields all decoded. PV 1100.0 V accepted; 1100.1 V or 1500 V → re-read twice, then block invalid. AC 650 V or battery 200 V follow the same retry path |
-| V23 | Delayed persistence, outages, and long counter gaps (P2.6, P4.4) | (a) *Delayed persistence:* with the lock held and Modbus healthy, make inserts fail for 45 min (for example by revoking INSERT on `Sample`); polls accumulate in the buffer and flush afterwards, a `LedgerDirtyRange` covers the span plus bounding samples, and recomputed intervals equal a run whose writes never failed. (a2) *Fail-closed outage:* take the DB offline 45 min; collection stops within the lease, the span is a `DB_UNAVAILABLE` gap with reduced coverage (explicitly **not** equal to uninterrupted collection), valid counters bridge the energy as gap-allocated, and only polls already buffered at the moment of loss are flushed. (b) A sample 3 h old inserted into an already-processed gap → the whole span between its neighbours is recomputed, not a trailing window. (c) A 6-h upstream gap between accepted counter readings → seeding uses the preceding accepted baseline from `counterState` (outside any lookback) and energy is gap-allocated over all 6 h with `counterGapAllocMask`. (d) Kill the worker mid-range and again between finishing a range and counter propagation, then restart → the range or its continuation row is still present, and final rows equal an uninterrupted run. (e) A dirty range older than `SAMPLE_RETENTION_DAYS` is truncated and reported via `outsideRetentionBefore`; nothing is reconstructed from deleted samples. (f) A repeated-meter run starting at 11:59:40 crosses `maxRepeatSpanSec` at 12:00:10, after the 11:55 bucket was computed → the retroactive `METER_STALE` update enqueues the whole run plus bounding samples in the same transaction, the 11:55 bucket is recomputed with reduced energy and coverage, and buckets before the run are untouched. (g) Phase 2 ingest runs with only `0001_core` applied (no accounting tables) and writes dirty ranges without error |
+| V23 | Delayed persistence, outages, and long counter gaps (P2.6, P4.4) | (a) *Delayed persistence:* with the lock held and Modbus healthy, make inserts fail for 45 min (for example by revoking INSERT on `Sample`); polls accumulate in the buffer and flush afterwards, a `LedgerDirtyRange` covers the span plus bounding samples, and recomputed intervals equal a run whose writes never failed. (a2) *Fail-closed outage:* take the DB offline 45 min; collection stops within the lease, the span is a `DB_UNAVAILABLE` gap with reduced coverage (explicitly **not** equal to uninterrupted collection), valid counters bridge the energy as gap-allocated, and only polls already buffered at the moment of loss are flushed. (b) A sample 3 h old inserted into an already-processed gap → the whole span between its neighbours is recomputed, not a trailing window. (c) A 6-h upstream gap between accepted counter readings → seeding uses the preceding accepted baseline from `counterState` (outside any lookback) and energy is gap-allocated over all 6 h with `counterGapAllocMask`. (d) Kill the worker mid-range and again between finishing a range and counter propagation, then restart → the range or its continuation row is still present, and final rows equal an uninterrupted run. (e) A dirty range older than `SAMPLE_RETENTION_DAYS` is truncated and reported via `outsideRetentionBefore`; nothing is reconstructed from deleted samples. (f) A repeated-meter run starting at 11:59:40 crosses `maxRepeatSpanSec` at 12:00:10, after the 11:55 bucket was computed → the retroactive `METER_STALE` update enqueues the whole run plus bounding samples in the same transaction, the 11:55 bucket is recomputed with reduced energy and coverage, and buckets before the run are untouched. (g) Isolated core-schema ingest runs with `0001_core` plus its `0004_raw_poll_monotonic` extension, without accounting/tariff tables, and writes dirty ranges without error. This test-only schema selection is not a production migration order or permission to run current ingest on bare 0001 |
 | V24 | Night-time reconnect identity (P2.5) | Replay a day capture, then a night capture with PV voltages < 1.0 V (detected MPPT count 0); in a variant the battery or meter blocks read as absent. Reconnect → the same `Device` row continues: no `retiredAt`, no new `deviceId`, no counter boundary; only `observedCapabilities` changes and `CAPABILITY_CHANGED` is logged. A model string ≠ `EXPECTED_MODEL` → `IDENTITY_MISMATCH`, no samples written. `device.js replace` retires the row and starts a new counter segment with no differencing across the boundary |
 | V25 | Lock-loss overlap prevention (P2.4) | Two backends A and B on one DB and the replay server. `pg_terminate_backend` on A's lock session → A issues no Modbus request after detection (≤ one 5-s heartbeat plus an in-flight 3-s request), closes its socket, and still flushes buffered polls; B acquires the lock but connects to Modbus only after the 18-s takeover delay. Replay-server logs never show two concurrent clients. Pausing A's DB traffic instead of killing it → A stops within `OWNERSHIP_LEASE_SEC`. A DB outage > 15 s yields no new samples until the lock is re-acquired; the 360-poll buffer preserves only already-collected polls |
 | V26 | NEM aging and cascading corrections (P5) | Synthetic tariff with `creditExpiryPeriods = 12` (a test value, not a TNB rule). Period 1 leaves 100 kWh unused → lot {P1, 100}. Period 2 consumes 30 → lot {P1, 70} keeps origin P1 (not refreshed to P2); only the unused part of P2's own export becomes {P2, x}. A lot older than the horizon is expired and reported **before** FIFO, so it offsets nothing. Correcting period 1 to 20 kWh changes its closing lots → period 2 is recomputed, then period 3, … until a period's closing lots equal their stored ones; a period with an independent `openingCreditLots` anchor stops the cascade. A missing intermediate `BillingPeriod` → `NEM_CHAIN_GAP`. Actual TNB lot order and horizon stay unverified until V18 |
 | V27 | `maxGapSec` vs source selection (P4.5) | A 45-s interval at 1 kW with `maxGapSec = 30` → excluded, GAP flag, covered seconds reduced. A policy at the same `effectiveFrom` with `maxGapSec = 60` → `CALC_PARAMS` dirty range, `CalculationRun(CALC_PARAMS_CHANGE)`, the interval becomes 12.5 Wh with `maxGapSecUsed = 60`, coverage and counter-allocation flags change, overlapping billing results are invalidated. Switching `gridSource` METER_NET → INVERTER_COUNTER creates no `CalculationRun` and writes no `EnergyInterval`, only billing invalidation. Buckets older than sample retention keep `maxGapSecUsed`; totals carry `STALE_CALC_PARAMS` and billing `CALC_PARAMS_PARTIAL_RECOMPUTE` |
 | V28 | Missing-export cost uncertainty (P5) | NEM tariff, simplified RM 0.50/kWh energy component, 100 kWh observed import, 80 kWh unobserved export → `ESTIMATED`, `isLowerBound = false`, reason `MISSING_DATA_DIRECTION_UNKNOWN`; the dashboard shows the "estimate: may be higher or lower" chip, not "≥" (observed-data cost RM 50 vs complete RM 10). `WHOLE` tiers (RM 1/kWh up to 100 kWh, RM 0.50/kWh above): observed 100 kWh = RM 100 vs complete 101 kWh = RM 50.50 → `false`. Any `ABOVE_THRESHOLD_SHARE`, negative rebate, `NET_IMPORT`, or tiered component → `false`. A synthetic `nem: null` tariff with only flat non-negative per-window rates, fixed charges, and non-negative percents, with only import missing → `isLowerBound = true`, "≥" shown. A property test over random quantities asserts that every tariff the engine marks lower-bound is non-decreasing in import |
 
+### Recorded acceptance snapshot (reconciliation; no fresh execution)
+
+Statuses below describe retained historical claims, not commands run by this documentation review. "Verified locally" is restricted to the stated synthetic/software scope. A partial local check does not close a larger NAS/hardware/installer/bill gate. D0 relies on the recorded user report, not a new NAS check. Source locations identify scenario coverage, not independent execution evidence.
+
+Evidence keys (all `docs/operations.md`; dates belong to the recorded runs):
+- **U/I/D — 2026-10-23 third pass**, lines 554–574: `npm test -w apps/backend` → 25 files/209 tests; full `npm run test:int -w apps/backend` → 24 files/282 tests; `npm test -w apps/desktop` → 16 files/95 tests. Typecheck/lint also passed. Aggregate counts alone do not verify every scenario.
+- **R — 2026-10-22/23**, lines 442–454 and 577–583: production-Dockerfile build plus `RESTORE_TEST_IMAGE=<recorded tag> bash deploy/dev/verify-restore.sh`, and `node apps/backend/.secrets/acceptda9e452062ed1ede/v19-check.mjs`; built-image V19 23.909 s, full restore 194.33 s, cleanup passed. The 2026-10-23 follow-up also records a separate 179 s restore. Do not conflate those runs or treat the removed private runner as still available.
+- **B — 2026-10-23**, lines 554–574: `bash deploy/dev/verify-v20.sh` → V20 PASS/CLEANUP PASS; `bash deploy/dev/verify-backup-paths.sh` → BACKUP-PATHS PASS (stub pg tools, not authentication or restore proof). Process samples may show a held pg_dump wrapper rather than the native process; hard-link behaviour on NAS remains untested.
+- **F — 2026-10-22/23**, lines 424–440: recorded `ACCEPTANCE_RUN=... node --max-old-space-size=384 .../soak.mjs delay` / `outage`; both exited 0 after 2,700,013.144 / 2,700,006.119 ms faults and scoped fidelity checks. Not OS-kill/NAS tests.
+- **E — 2026-10-22/23**, lines 456–466: actual corrected unpacked executable, synthetic loopback backend, collection DISABLED, focused-window-equivalent outage response 9.723 s. Not NSIS; later source fixes were not rerun in this executable (lines 574). The private package/profile/runners were removed (lines 498–511).
+
+| Item | Status | Historical evidence / named prerequisite |
+|---|---|---|
+| V1 | verified locally | Historical U: jittered 1 kW/hour and 45 s hole; integrate.spec.ts:11-38. |
+| V2 | verified locally | Historical U: directional zero crossing; integrate.spec.ts:41-51. |
+| V3 | verified locally | Historical U: 500 Wh NET / 2000 Wh import + 1500 Wh export per phase with total = phase sum (compute.spec.ts:74-95). Fresh 2026-10-24 synthetic regressions where the meter total differs from the phase sum (−300 W and +1200 W against +500 W), plus unavailable-total and unavailable-phase cases: compute.spec.ts:96-161, families.spec.ts:85-96. Software semantics only; physical accuracy awaits G3/G5/G6. |
+| V4 | verified locally | Historical U: counter reset, spike, wrap and dimensional rate limits; counters.spec.ts. |
+| V5 | verified locally | Historical U/I: duplicate 360-poll ingest, deterministic ledger, backward-clock validity; ledger.int-spec.ts:203 and clock-validity.int-spec.ts:230. |
+| V6 | verified locally | Historical I: effective source selection/supersession, no source-only recompute, billing invalidation; policy.int-spec.ts:257, totals.int-spec.ts:190, billing.int-spec.ts:502. |
+| V7 | verified locally | Historical U/I: meter-down/missing-counter independence, repeat staleness and 45 s API freshness; compute.spec.ts:276, ledger.int-spec.ts:347, api.int-spec.ts:286. Synthetic, not site cadence. |
+| V8 | verified locally | Historical U/I: synthetic ToU/version/tier/rounding cases; engine.spec.ts:95,198, totals.int-spec.ts:377, billing.int-spec.ts:146. No actual tariff verified. |
+| V9 | verified locally | Historical I: Europe/Berlin 276/300 buckets and UTC equality; totals.int-spec.ts:560. |
+| V10 | blocked on named prerequisite | Authorized NAS deployment plus G0–G2 and actual stick; no NAS restart/single-client evidence. Operations:518. |
+| V11 | blocked on named prerequisite | Actual NAS datasets, dump-time counts/totals and resumed site collection. Historical R verifies only the isolated synthetic production-shaped restore. Operations:519. |
+| V12 | blocked on named prerequisite | Deployed gated collection and a measured ≥2 h PC-off/phone-airplane-mode interval. Operations:518. |
+| V13 | blocked on named prerequisite | Live NAS/site collection and simultaneous UI/API/gap comparison. Historical E is local, synthetic, collection DISABLED, focused-window equivalent only; not full V13. |
+| V14 | unverified | Historical E covers renderer globals, bridge/IPC and window.open, but the current-source packaged executable was not rechecked after later fixes; explicit external-navigation and renderer-token-visibility evidence is incomplete. |
+| V15 | blocked on named prerequisite | Authorized current-source NSIS build/install/restart/upgrade/uninstall checks. Existing installer predates the latest runtime correction; E is unpacked only. Operations:522. |
+| V16 | blocked on named prerequisite | Wired G0–G4 captures plus ≥24 h NAS observations and daily physical balance. Operations:517,520. |
+| V17 | blocked on named prerequisite | G6: ≥7-day EXIF-timed utility readings, import delta ≥50 kWh, known resolution and comparison/investigation. Operations:520. |
+| V18 | blocked on named prerequisite | Real redacted bills, actual rates/holidays, required monthly/window splits and NEM origins, plus operator attestation. Synthetic verification never passes V18. Operations:262-277,521. |
+| V19 | verified locally | Historical R: production image on internal-only network, migrate success, readyz 200, wrong secret exits 1 and backend never starts; 23.909 s. No NAS inference. |
+| V20 | blocked on named prerequisite | Actual NAS mount/permissions and unattended natural 03:30 run. Historical B passes local authentication/concurrency/cleanup with an overridden schedule; not the literal NAS/nightly gate. |
+| V21 | verified locally | Historical R: real populated 0002 archive restored to an empty target, then exactly 0003/0004/0005; readyz and fidelity pass. This is the proposed current-schema variant, not NAS acceptance. |
+| V22 | verified locally | Historical U: valid 820/760/1100 V and invalid-bound retry cases; hoymiles-g3.spec.ts:42-103. Synthetic registers only. |
+| V23 | unverified | Historical F verifies both 45-minute local faults; I covers late samples, six-hour counters, rollback/continuation, retention, stale runs and updated core-schema fixture. OS-kill boundary acceptance is absent, and the long outage did not exercise a nonempty pre-outage buffer. Operations:440,523. |
+| V24 | unverified | Historical U/I cover day/night replay, wrong model, explicit replacement and unit-level absent capabilities; no complete absent-battery/meter reconnect variant is identified. Physical identity remains G1-gated. |
+| V25 | unverified | Historical I covers killed lock, paused DB traffic, takeover exclusion and buffered flush with shortened lease/timeout settings. No complete default 15 s lease / 18 s takeover scenario is recorded; no real-stick/NAS proof. |
+| V26 | verified locally | Historical U/I: synthetic FIFO/aging/origins, cascade convergence, anchors and chain gaps; engine.spec.ts:589-797, billing.int-spec.ts:363-501. TNB lot rules remain blocked on V18. |
+| V27 | verified locally | Historical U/I: 30→60 s gap recomputation, source-only non-rewrite and outside-retention staleness; integrate.spec.ts:54, ledger.int-spec.ts:492, policy.int-spec.ts:315-412. |
+| V28 | verified locally | Historical U/I/D and recorded synthetic renderer evidence (operations:340): nonmonotone counterexamples, lower-bound property checks and uncertainty display. Not a real-bill result. |
+| D0 | verified on hardware/NAS | User-reported version 25.04.2.6 satisfies the version criterion only (operations:11). No fresh NAS inspection; pool/IP/resources and deployment remain blocked. |
+| G0 | blocked on named prerequisite | Installer-approved wired path/address; recorded Wi-Fi-only port 502 refusal is not a pass. |
+| G1 | blocked on named prerequisite | G0, then real read-only identity/capability capture and label comparison; configured defaults/replay are not discovery. |
+| G2 | blocked on named prerequisite | G0 and authorized sequential TS/Python 0.3.0 captures; no hardware decoder parity recorded. |
+| G3 | blocked on named prerequisite | Real controlled import/battery/sign windows and residual evidence; map/sign/CT location remain provisional. |
+| G4 | blocked on named prerequisite | Real two-second cadence capture and 10 s comparison; polling configuration is not measured cadence. |
+| G5 | blocked on named prerequisite | ≥24 h site/NAS dataset with counter ratios and reset times; seeded PV/battery sources remain INTEGRATED. |
+| G6 | blocked on named prerequisite | Aligned ≥7-day utility meter photographs/readings, resolution and minimum deltas; no automatic calibration/promotion. |
+| C1 | blocked on named prerequisite | User decision on a secure authorized cloud credential path; A1 remains plan-only. |
+| C2 | blocked on named prerequisite | C1 and authorized real request/response/field/cadence verification; APK routes are only static candidates. |
+| C3 | blocked on named prerequisite | Verified cloud contract and utility comparison of counter families; community issue #80 is not site evidence. |
+| VC1 | blocked on named prerequisite | C1/C2, an authorized implemented adapter, and 24 h NAS snapshot evidence. |
+| VC2 | blocked on named prerequisite | C1/C2 and implemented cloud freshness/UI; no current SNAPSHOT behaviour exists. |
+| VC3 | blocked on named prerequisite | C1/C2 and implemented cloud adapter; no auth-expiry/outage/restart evidence. |
+| VC4 | blocked on named prerequisite | Verified endpoint allowlist, implemented enforcement and authorized request trace. |
+| VC5 | blocked on named prerequisite | Implemented cloud source and observed isolation/source-switch scenario; absence of cloud code is not a test pass. |
+
+**Milestone/phase status, not chronology rewritten as success:**
+
+| Phase / milestone reference | Implementation and acceptance |
+|---|---|
+| Phase 0 | D0 version prerequisite satisfied by user report; wired path and remaining NAS facts blocked. |
+| M1 / Phase 1 | Source, probe/replay and provisional field map exist; real G1/G2 exit and G3/G4 observations remain blocked. |
+| Phase 2 | Collector, persistence, auth/TLS/API and local verification exist; site collector exit remains gated. |
+| Phase 3 | Compose, backup and restore scripts plus local drills exist; no NAS deployment, 72 h collection, natural unattended backup or NAS restore acceptance. |
+| Phase 4 | Ledger/totals/reconciliation software and local tests exist; G5, physical daily balance and G6 remain open. |
+| Phase 5 | Synthetic billing/verifier mechanics exist; no V18 or production tariff verification. |
+| M7 / Phase 6 | Dashboard and shared contracts exist; unpacked runtime evidence is historical; V12–V15 exit is not complete. |
+| Phase 7 / M8 evidence | Operations §9 records local software verification, not final site sign-off; real meter/bill/NAS/installer acceptance remains open. |
+
+
+
 ## User inputs still needed (prioritized; never send passwords or tokens in chat)
 
 1. **Gateway wired path (Modbus track):** a client bridge or cable to the stick's Ethernet socket, then its wired IP (DHCP reservation). The user will arrange it later; the installer should be consulted first. **Cloud credential path (C1)** is needed for the stopgap.
-2. **TrueNAS (Phase 0/3):** version (must be ≥ 24.10), pool name, NAS LAN IP, free RAM and disk.
+2. **TrueNAS (Phase 0/3):** pool name, trusted NAS LAN IP, free RAM and disk. Version **25.04.2.6** is already user-reported in the runbook and satisfies D0; do not ask for it again.
 3. **GHCR:** the user creates a `read:packages` PAT and enters it only in the TrueNAS registry sign-in.
 4. **TNB bills (Phase 5):** 1–3 recent bills with period dates, peak/off-peak import kWh, export kWh, every line amount, NEM credit carried and its origin, AFA rate, and the public-holiday list TNB applies to ToU. Redact account numbers before sharing as fixtures.
 5. **TNB meter readings (Phase 7):** timestamped photos of the import/export (and ToU, if shown) registers at day 0 and day 7, then on each bill date.
@@ -1009,7 +1101,7 @@ Prerequisites:
 - **`graphql-depth-limit` fails with graphql 16.11+:** replace it with a ~30-line custom `ValidationRule` that enforces depth ≤ 8.
 - **Electron's `certificate.fingerprint` format differs from the backend's `sha256/<base64>` log line:** compute and log the backend fingerprint in Electron's format. Verify on the first connection in Phase 6.
 - **Meter words legitimately unchanged longer than 30 s:** `maxRepeatSpanSec = 2 × observed update period` (from G4).
-- **How the utility nets phases is unknown:** `METER_NET` is the default until G6 selects otherwise.
+- **How the utility nets phases is unknown:** `METER_NET` (the meter's own total, register 1814) is the default until G6 selects otherwise; `METER_PER_PHASE` remains a separate candidate.
 - **No bill provided by Phase 5:** the engine ships with synthetic tests; costs show `ESTIMATED` with `TARIFF_NOT_BILL_VERIFIED`.
 - **libpq ignores the password file or `pg_dump` would prompt:** `backup.sh` uses `-w`, so it logs `BACKUP FAILED` instead of hanging. Fix the file mode (0600) or tmpfs ownership; never fall back to a password on a command line.
 - **Prisma cannot load `prisma.config.ts` in the runtime image:** a release blocker found by V19. Fix the image contents (the Phase 2.1 file set); do not change the migration design.

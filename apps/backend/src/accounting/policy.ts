@@ -30,11 +30,13 @@ export interface PolicyInput {
   note: string;
 }
 
-export function selectSegment(
-  segments: PolicySegment[],
-  at: Date,
-): PolicySegment | undefined {
-  let chosen: PolicySegment | undefined;
+export function selectSegment<
+  T extends Pick<
+    PolicySegment,
+    'version' | 'effectiveFrom' | 'supersededByVersion'
+  >,
+>(segments: T[], at: Date): T | undefined {
+  let chosen: T | undefined;
   for (const segment of segments) {
     if (segment.supersededByVersion !== null || segment.effectiveFrom > at)
       continue;
@@ -47,6 +49,36 @@ export function selectSegment(
       chosen = segment;
   }
   return chosen;
+}
+
+/**
+ * Version of the policy in force at `at`, chosen by selectSegment; 0 when none applies (nothing
+ * seeded yet, or every non-superseded policy starts later). Read-only: it never seeds a policy.
+ */
+export async function effectivePolicyVersion(
+  prisma: PrismaService,
+  at: Date,
+): Promise<number> {
+  const active = await prisma.accountingPolicy.findMany({
+    where: { supersededByVersion: null },
+    select: { version: true, effectiveFrom: true, supersededByVersion: true },
+  });
+  return selectSegment(active, at)?.version ?? 0;
+}
+
+/**
+ * Durable start of accounting: the earliest policy `effectiveFrom`. It is set when the first Sample
+ * seeds policy v1 and ensurePolicyV1 only ever moves it backward (delayed earlier data), so Sample
+ * retention cannot shift it. Null before any policy exists.
+ */
+export async function accountingStart(
+  prisma: PrismaService,
+): Promise<Date | null> {
+  const first = await prisma.accountingPolicy.findFirst({
+    orderBy: { effectiveFrom: 'asc' },
+    select: { effectiveFrom: true },
+  });
+  return first?.effectiveFrom ?? null;
 }
 
 // Serialize the seed and policy mutations, including independent backend processes.

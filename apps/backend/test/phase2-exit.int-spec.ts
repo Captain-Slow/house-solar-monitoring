@@ -12,6 +12,7 @@ import {
   type ReplayServer,
 } from '../src/cli/replay-server.js';
 import { TokenService } from '../src/auth/token.service.js';
+import { LedgerService } from '../src/accounting/ledger.service.js';
 import { CollectorService } from '../src/collector/collector.service.js';
 import { parseEnv, type Env } from '../src/config/env.js';
 import { PrismaService } from '../src/db/prisma.service.js';
@@ -141,8 +142,11 @@ describe('Phase 2 exit against the replay server', () => {
       '5 samples',
     );
 
+    // The worker's startup ledger pass ran before any Sample existed and the next tick is 60 s
+    // after bootstrap, so no AccountingPolicy exists yet: collectorStatus must report none.
+    expect(await prisma.accountingPolicy.count()).toBe(0);
     const live = await gql(
-      '{ liveStatus { freshness ageSeconds grid { watts status } pv { watts status } batterySoc accountingStatus operatingMode { code label } } collectorStatus { state acquisitionSource monitoringSince } }',
+      '{ liveStatus { freshness ageSeconds grid { watts status } pv { watts status } batterySoc accountingStatus operatingMode { code label } } collectorStatus { state acquisitionSource monitoringSince policyVersion } }',
       z.object({
         liveStatus: z.object({
           freshness: z.string(),
@@ -158,7 +162,8 @@ describe('Phase 2 exit against the replay server', () => {
         collectorStatus: z.object({
           state: z.string(),
           acquisitionSource: z.string(),
-          monitoringSince: z.string().nullable(),
+          monitoringSince: z.coerce.date().nullable(),
+          policyVersion: z.number(),
         }),
       }),
     );
@@ -173,7 +178,8 @@ describe('Phase 2 exit against the replay server', () => {
       state: 'RUNNING',
       acquisitionSource: 'MODBUS',
     });
-    expect(live.collectorStatus.monitoringSince).not.toBeNull();
+    expect(live.collectorStatus.monitoringSince).toBeNull();
+    expect(live.collectorStatus.policyVersion).toBe(0);
 
     const [{ n, d }] = await prisma.$queryRaw<{ n: bigint; d: bigint }[]>`
       SELECT count(*) AS n, count(DISTINCT "observedAt") AS d FROM "Sample"`;
@@ -182,6 +188,27 @@ describe('Phase 2 exit against the replay server', () => {
     expect(devices).toHaveLength(1);
     expect(devices[0]!.retiredAt).toBeNull();
     expect(await prisma.ledgerDirtyRange.count()).toBeGreaterThan(0);
+
+    // Drive the ledger pass explicitly (joins the worker's in-flight pass if one is running):
+    // it seeds policy v1 at the earliest Sample, which is what monitoringSince now reports.
+    await appA.get(LedgerService).processOnce();
+    const earliest = await prisma.sample.findFirstOrThrow({
+      orderBy: { observedAt: 'asc' },
+      select: { observedAt: true },
+    });
+    const seeded = await gql(
+      '{ collectorStatus { monitoringSince policyVersion } }',
+      z.object({
+        collectorStatus: z.object({
+          monitoringSince: z.coerce.date().nullable(),
+          policyVersion: z.number(),
+        }),
+      }),
+    );
+    expect(seeded.collectorStatus.policyVersion).toBe(1);
+    expect(seeded.collectorStatus.monitoringSince?.toISOString()).toBe(
+      earliest.observedAt.toISOString(),
+    );
   }, 60_000);
 
   it('a second backend on the same database reports LOCK_NOT_HELD and never connects to the device', async () => {

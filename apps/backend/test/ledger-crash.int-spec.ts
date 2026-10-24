@@ -775,6 +775,53 @@ describe('ledger recovery (V23)', () => {
     expect(await prisma.ledgerDirtyRange.count()).toBe(0);
   });
 
+  it('persists METER_PER_PHASE coverage independently of the meter-total coverage', async () => {
+    for (let i = 0; i <= 30; i++) await sample(i * 10_000, 1000);
+    // Meter total (1814) unavailable for the first half of the bucket; all three phases stay valid.
+    await prisma.sample.updateMany({
+      where: { observedAt: { lt: at(150_000) } },
+      data: { gridW: null },
+    });
+    await dirty(0, BUCKET_MS);
+    await worker().processOnce();
+    const row = await prisma.energyInterval.findUniqueOrThrow({
+      where: { bucketStart: at(0) },
+    });
+    expect(row.gridCoveredSec).toBe(150);
+    expect(row.gridPhaseCoveredSec).toBe(300);
+    expect(row.gridImportNetWh).not.toBeNull();
+    expect(row.gridImportPhaseWh?.toString()).toBe('83.25');
+  });
+
+  it('never rewrites a stored row whose phase coverage predates migration 0006 (NULL) while verifying it as a prefix', async () => {
+    for (let i = 0; i <= 30; i++)
+      await sample(i * 10_000, 1000, 1000n + BigInt(i * 10));
+    await dirty(0, BUCKET_MS);
+    await worker().processOnce();
+    expect(
+      (
+        await prisma.energyInterval.findUniqueOrThrow({
+          where: { bucketStart: at(0) },
+        })
+      ).gridPhaseCoveredSec,
+    ).toBe(300);
+    const legacy = await prisma.energyInterval.update({
+      where: { bucketStart: at(0) },
+      data: { gridPhaseCoveredSec: null },
+    });
+    for (let i = 31; i <= 200; i++) await sample(i * 10_000);
+    await sample(2_100_000, 1000, 1900n);
+    await dirty(BUCKET_MS, 2 * BUCKET_MS);
+    await worker().processOnce();
+    const rows = await prisma.energyInterval.findMany({
+      orderBy: { bucketStart: 'asc' },
+    });
+    expect(rows.map((row) => row.bucketStart)).toEqual([at(0), at(BUCKET_MS)]);
+    expect(rows[0]).toEqual(legacy);
+    expect(rows[1]!.gridPhaseCoveredSec).toBe(300);
+    expect(await prisma.ledgerDirtyRange.count()).toBe(0);
+  });
+
   it('converges mixed-mapping UTC day chunks and preserves every persisted field on narrow replay and restart', async () => {
     const nextDay = 86_400_000;
     const utcEnv = { ...env, SITE_TIMEZONE: 'UTC' };

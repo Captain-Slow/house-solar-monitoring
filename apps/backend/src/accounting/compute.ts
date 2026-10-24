@@ -93,6 +93,7 @@ export function computeRange(input: ComputeInput): ComputeOutput {
         loadDerivedWh: null,
         loadCounterWh: null,
         gridCoveredSec: 0,
+        gridPhaseCoveredSec: 0,
         pvCoveredSec: 0,
         batCoveredSec: 0,
         socCoveredSec: 0,
@@ -202,6 +203,16 @@ export function computeRange(input: ComputeInput): ComputeOutput {
       }
       if (value.gap) row.flags |= LedgerFlag.GRID_GAP;
     }
+  }
+  // METER_PER_PHASE needs all three phases, so its coverage is the intersection of the phases'
+  // valid time (the minimum, never a sum). A bucket a phase never touched has no coverage.
+  for (const [start, first] of phases[0]) {
+    const covered = Math.min(
+      first.coveredSec,
+      phases[1].get(start)?.coveredSec ?? 0,
+      phases[2].get(start)?.coveredSec ?? 0,
+    );
+    if (covered) rowAt(start).gridPhaseCoveredSec = covered;
   }
   for (const [start, value] of pv) {
     const row = rowAt(start);

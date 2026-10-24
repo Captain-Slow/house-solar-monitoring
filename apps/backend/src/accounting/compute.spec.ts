@@ -81,10 +81,176 @@ describe('computeRange', () => {
       }),
     );
     const result = computeRange(input(samples, { toMs: 3_600_000 }));
+    for (const row of result.rows) {
+      expect(row.gridImportNetWh).not.toBeNull();
+      expect(row.gridExportNetWh).toBe(0);
+      expect(row.gridImportPhaseWh).not.toBeNull();
+      expect(row.gridExportPhaseWh).not.toBeNull();
+    }
     expect(sum(result.rows, 'gridImportNetWh')).toBeCloseTo(500, 5);
     expect(sum(result.rows, 'gridExportNetWh')).toBe(0);
     expect(sum(result.rows, 'gridImportPhaseWh')).toBeCloseTo(2000, 5);
     expect(sum(result.rows, 'gridExportPhaseWh')).toBeCloseTo(1500, 5);
+  });
+
+  describe('V3 meter-total NET semantics: register 1814 total, never the phase sum', () => {
+    // One hour of constant power. Per-phase readings sum to +500 W.
+    const phaseReadings = { gridAW: 1000, gridBW: 1000, gridCW: -1500 };
+    const hour = (changes: Partial<LedgerSample>): IntervalRow[] =>
+      computeRange(
+        input(
+          Array.from({ length: 361 }, (_, i) => sample(i * 10_000, changes)),
+          { toMs: 3_600_000 },
+        ),
+      ).rows;
+
+    it.each([
+      // meter total W, expected NET import Wh, expected NET export Wh
+      [-300, 0, 300],
+      [1200, 1200, 0],
+    ])(
+      'integrates a %i W meter total directionally for NET and each phase directionally for PER_PHASE',
+      (gridW, importWh, exportWh) => {
+        const rows = hour({ gridW, ...phaseReadings });
+        for (const row of rows) {
+          for (const key of [
+            'gridImportNetWh',
+            'gridExportNetWh',
+            'gridImportPhaseWh',
+            'gridExportPhaseWh',
+          ] as const)
+            expect(row[key]).not.toBeNull();
+          expect(
+            row[importWh === 0 ? 'gridImportNetWh' : 'gridExportNetWh'],
+          ).toBe(0);
+        }
+        expect(sum(rows, 'gridImportNetWh')).toBeCloseTo(importWh, 5);
+        expect(sum(rows, 'gridExportNetWh')).toBeCloseTo(exportWh, 5);
+        expect(sum(rows, 'gridImportPhaseWh')).toBeCloseTo(2000, 5);
+        expect(sum(rows, 'gridExportPhaseWh')).toBeCloseTo(1500, 5);
+      },
+    );
+
+    it('leaves NET unknown when the meter total is unavailable instead of deriving it from valid phases', () => {
+      const rows = hour({ gridW: null, ...phaseReadings });
+      expect(rows).toHaveLength(12);
+      for (const row of rows) {
+        expect(row.gridImportNetWh).toBeNull();
+        expect(row.gridExportNetWh).toBeNull();
+        expect(row.gridCoveredSec).toBe(0);
+        expect(row.flags & LedgerFlag.GRID_GAP).toBeTruthy();
+      }
+      expect(sum(rows, 'gridImportPhaseWh')).toBeCloseTo(2000, 5);
+      expect(sum(rows, 'gridExportPhaseWh')).toBeCloseTo(1500, 5);
+    });
+
+    it('leaves PER_PHASE unknown when a phase is unavailable instead of deriving it from the meter total', () => {
+      const rows = hour({ gridW: 500, ...phaseReadings, gridBW: null });
+      expect(rows).toHaveLength(12);
+      for (const row of rows) {
+        expect(row.gridImportPhaseWh).toBeNull();
+        expect(row.gridExportPhaseWh).toBeNull();
+      }
+      for (const row of rows) {
+        expect(row.gridImportNetWh).not.toBeNull();
+        expect(row.gridExportNetWh).toBe(0);
+      }
+      expect(sum(rows, 'gridImportNetWh')).toBeCloseTo(500, 5);
+      expect(sum(rows, 'gridExportNetWh')).toBe(0);
+    });
+
+    describe('METER_PER_PHASE coverage is its own column, never the meter-total coverage', () => {
+      it('covers phase energy when the meter total is unavailable but all three phases are valid', () => {
+        const rows = hour({ gridW: null, ...phaseReadings });
+        expect(rows).toHaveLength(12);
+        for (const row of rows) {
+          expect(row.gridImportPhaseWh).not.toBeNull();
+          expect(row.gridExportPhaseWh).not.toBeNull();
+          expect(row.gridPhaseCoveredSec).toBeCloseTo(300, 5);
+          expect(row.gridCoveredSec).toBe(0);
+          expect(row.gridImportNetWh).toBeNull();
+        }
+      });
+
+      it('reports no phase coverage when the meter total is valid but one phase is unavailable', () => {
+        const rows = hour({ gridW: 500, ...phaseReadings, gridBW: null });
+        expect(rows).toHaveLength(12);
+        for (const row of rows) {
+          expect(row.gridImportPhaseWh).toBeNull();
+          expect(row.gridExportPhaseWh).toBeNull();
+          expect(row.gridPhaseCoveredSec).toBe(0);
+          expect(row.gridCoveredSec).toBeCloseTo(300, 5);
+        }
+      });
+
+      it('gives both candidates the same coverage when the total and all phases are valid', () => {
+        const rows = hour({ gridW: 500, ...phaseReadings });
+        expect(rows).toHaveLength(12);
+        for (const row of rows) {
+          expect(row.gridPhaseCoveredSec).toBeCloseTo(300, 5);
+          expect(row.gridCoveredSec).toBeCloseTo(300, 5);
+          expect(row.gridPhaseCoveredSec).toBe(row.gridCoveredSec);
+        }
+      });
+
+      it('counts only the time all three phases are valid inside a bucket, never a sum or the total coverage', () => {
+        // One bucket, 10 s samples at t = 0..300 s. Phase B is missing for t <= 100 s, so the
+        // intervals starting at 110 s and later (190 s) are the only ones with all phases valid;
+        // the meter total is valid throughout. Phase A/C stay valid for the whole bucket.
+        const samples = Array.from({ length: 31 }, (_, i) =>
+          sample(i * 10_000, {
+            gridW: 500,
+            ...phaseReadings,
+            gridBW: i * 10_000 <= 100_000 ? null : phaseReadings.gridBW,
+          }),
+        );
+        const row = computeRange(input(samples)).rows[0]!;
+        expect(row.gridCoveredSec).toBeCloseTo(300, 5);
+        expect(row.gridPhaseCoveredSec).toBeCloseTo(190, 5);
+        expect(row.gridImportPhaseWh).not.toBeNull();
+      });
+
+      it('keeps meter-total coverage independent of the phase gap in the opposite direction', () => {
+        // Total missing for t <= 100 s; all phases valid throughout.
+        const samples = Array.from({ length: 31 }, (_, i) =>
+          sample(i * 10_000, {
+            gridW: i * 10_000 <= 100_000 ? null : 500,
+            ...phaseReadings,
+          }),
+        );
+        const row = computeRange(input(samples)).rows[0]!;
+        expect(row.gridCoveredSec).toBeCloseTo(190, 5);
+        expect(row.gridPhaseCoveredSec).toBeCloseTo(300, 5);
+      });
+
+      // Constant 2000 W import / 1500 W export across the three phases (see phaseReadings).
+      it.each([
+        [
+          'a CLOCK_STEP sample splits two intervals out of the bucket',
+          (i: number) => [i * 10_000, i === 10 ? SampleFlag.CLOCK_STEP : 0],
+          280,
+        ],
+        [
+          'a gap longer than maxGapSec splits one interval out of the bucket',
+          (i: number) => [i < 10 ? i * 10_000 : (i + 6) * 10_000, 0],
+          230,
+        ],
+      ] as const)(
+        'lowers gridPhaseCoveredSec together with the phase energy when %s',
+        (_name, at, covered) => {
+          const samples = Array.from({ length: 31 }, (_, i) => {
+            const [tMs, flags] = at(i);
+            return sample(tMs, { gridW: 500, ...phaseReadings, flags });
+          }).filter((s) => s.tMs <= 300_000);
+          const row = computeRange(input(samples)).rows[0]!;
+          expect(row.gridPhaseCoveredSec).toBeCloseTo(covered, 5);
+          expect(row.gridCoveredSec).toBeCloseTo(covered, 5);
+          expect(row.gridImportPhaseWh).toBeCloseTo((2000 * covered) / 3600, 5);
+          expect(row.gridExportPhaseWh).toBeCloseTo((1500 * covered) / 3600, 5);
+          expect(row.flags & LedgerFlag.GRID_GAP).toBeTruthy();
+        },
+      );
+    });
   });
 
   it('V5 is deterministic, and CLOCK_STEP excludes backward-observed readings', () => {

@@ -5,9 +5,10 @@ import { PrismaService } from '../src/db/prisma.service.js';
 import { TotalsService } from '../src/accounting/totals.service.js';
 import {
   SeriesService,
-  selectSeriesWidth,
   type PowerMetric,
+  type PowerSeries,
 } from '../src/accounting/series.service.js';
+import { selectSeriesGrid } from '../src/accounting/series-grid.js';
 import { LEDGER_ALGO_VERSION, LedgerFlag } from '../src/accounting/types.js';
 import { SampleFlag } from '../src/collector/types.js';
 import { createTestDatabase, type TestDatabase } from './support/db.js';
@@ -254,7 +255,14 @@ describe('accounting totals and power series', () => {
         [300, 1],
         [301, 1],
         [366 * 86400, 2000],
-      ].map(([span, max]) => selectSeriesWidth(span!, max!)),
+      ].map(
+        ([span, max]) =>
+          selectSeriesGrid(
+            start.getTime(),
+            start.getTime() + span! * 1000,
+            max!,
+          ).widthSeconds,
+      ),
     ).toEqual([10, 60, 300, 900, 86400]);
     const result = await series.powerSeries(
       start,
@@ -976,5 +984,373 @@ describe('accounting totals and power series', () => {
       2,
     );
     expect(repeated).toEqual(unique);
+  });
+
+  describe('maxPoints is a hard per-metric maximum', () => {
+    const ledgerRow = (
+      bucketStart: number,
+      values: Record<string, number | null>,
+    ) => ({
+      bucketStart: new Date(bucketStart),
+      calcVersion: LEDGER_ALGO_VERSION,
+      maxGapSecUsed: 30,
+      mappingVersion: 1,
+      computedAt: start,
+      gridCoveredSec: 0,
+      pvCoveredSec: 300,
+      batCoveredSec: 0,
+      loadCoveredSec: 0,
+      socCoveredSec: 0,
+      counterUnknownSec: [0, 0, 0, 0, 0, 0],
+      counterGapAllocMask: 0,
+      flags: 0,
+      ...values,
+    });
+    const secondsFrom = (ms: number) => (ms - start.getTime()) / 1000;
+    /** Seconds of each metric that are valid, summed over its points, plus the coverage-weighted mean. */
+    function observed(
+      result: PowerSeries,
+      metric: PowerMetric,
+      from: Date,
+      to: Date,
+    ) {
+      const step = result.bucketSeconds * 1000;
+      let covered = 0,
+        weighted = 0;
+      for (const point of result.series.find((s) => s.metric === metric)!
+        .points) {
+        const window =
+          (Math.min(point.t.getTime() + step, to.getTime()) -
+            Math.max(point.t.getTime(), from.getTime())) /
+          1000;
+        const seconds = point.coverage.toNumber() * window;
+        covered += seconds;
+        weighted += (point.avg ?? 0) * seconds;
+      }
+      return { covered, avg: covered ? weighted / covered : null };
+    }
+    /** Points never exceed maxPoints and the aligned grid covers [from, to) with whole-second ledger-compatible widths. */
+    function expectBoundedCover(
+      result: PowerSeries,
+      from: Date,
+      to: Date,
+      maxPoints: number,
+    ) {
+      const step = result.bucketSeconds * 1000;
+      expect(Number.isInteger(result.bucketSeconds)).toBe(true);
+      if (result.bucketSeconds >= 300)
+        expect(result.bucketSeconds % 300).toBe(0);
+      for (const { points } of result.series) {
+        expect(points.length).toBeGreaterThanOrEqual(1);
+        expect(points.length).toBeLessThanOrEqual(maxPoints);
+        expect(points[0]!.t.getTime()).toBeLessThanOrEqual(from.getTime());
+        expect(points.at(-1)!.t.getTime() + step).toBeGreaterThanOrEqual(
+          to.getTime(),
+        );
+        points.forEach((point, i) => {
+          if (i)
+            expect(point.t.getTime() - points[i - 1]!.t.getTime()).toBe(step);
+        });
+      }
+    }
+
+    it('collapses a window that straddles every table boundary into one bucket without splitting its valid data', async () => {
+      const midnight = Date.parse('2035-01-20T00:00:00Z');
+      await prisma.energyInterval.createMany({
+        data: [
+          ledgerRow(midnight - 300_000, {
+            pvAvgW: 100,
+            pvMaxW: 150,
+            socCoveredSec: 300,
+            socMin: 40,
+            socMax: 50,
+          }),
+          ledgerRow(midnight, {
+            pvAvgW: 300,
+            pvMaxW: 350,
+            socCoveredSec: 300,
+            socMin: 60,
+            socMax: 70,
+          }),
+        ],
+      });
+      await sample(secondsFrom(midnight - 100_000), 9001, { gridAW: 100 });
+      await sample(secondsFrom(midnight + 50_000), 9002, { gridAW: 300 });
+      // 10 s ... 86400 s all have a boundary at midnight inside this 300 s window.
+      const from = new Date(midnight - 150_000),
+        to = new Date(midnight + 150_000);
+      const result = await series.powerSeries(
+        from,
+        to,
+        ['PV', 'SOC', 'GRID_A'],
+        1,
+      );
+      expectBoundedCover(result, from, to, 1);
+      expect(result.bucketSeconds).toBe(600);
+      const [pv, soc, grid] = result.series.map((s) => s.points[0]!);
+      expect(pv).toMatchObject({ avg: 200, min: null, max: 350 });
+      expect(pv.coverage.toNumber()).toBe(1);
+      expect(soc).toMatchObject({ avg: null, min: 40, max: 70 });
+      expect(soc.coverage.toNumber()).toBe(1);
+      expect(grid).toMatchObject({ avg: 200, min: 100, max: 300 });
+      expect(grid.coverage.toNumber()).toBeCloseTo(20 / 300, 12);
+      expect(result.gaps).toEqual([]);
+    });
+
+    describe('366-day unaligned window', () => {
+      const from = new Date('2030-01-15T10:07:13.250Z');
+      const to = new Date(from.getTime() + 366 * 86_400_000);
+      beforeAll(async () => {
+        await prisma.energyInterval.createMany({
+          data: [
+            // Clipped by `from` (166.75 s overlap), interior (300 s) and clipped by `to` (133.25 s).
+            ledgerRow(Date.parse('2030-01-15T10:05:00Z'), {
+              pvAvgW: 100,
+              pvMaxW: 150,
+            }),
+            ledgerRow(Date.parse('2030-06-01T00:00:00Z'), {
+              pvAvgW: 300,
+              pvMaxW: 350,
+              socCoveredSec: 150,
+              socMin: 20,
+              socMax: 80,
+            }),
+            ledgerRow(Date.parse('2031-01-16T10:05:00Z'), {
+              pvAvgW: 500,
+              pvMaxW: 550,
+              socCoveredSec: 300,
+              socMin: 30,
+              socMax: 60,
+            }),
+          ],
+        });
+        await sample(secondsFrom(Date.parse('2030-06-01T00:00:05Z')), 9003, {
+          gridAW: 200,
+        });
+        await sample(secondsFrom(Date.parse('2031-01-16T10:07:03Z')), 9004, {
+          gridAW: 400,
+        });
+      });
+
+      it.each([1, 2, 50, 2000])(
+        'covers it with at most %i points and keeps every valid observation',
+        async (maxPoints) => {
+          const result = await series.powerSeries(
+            from,
+            to,
+            ['PV', 'SOC', 'GRID_A'],
+            maxPoints,
+          );
+          expectBoundedCover(result, from, to, maxPoints);
+          if (maxPoints === 2000) expect(result.bucketSeconds).toBe(86400);
+          const pv = observed(result, 'PV', from, to);
+          expect(pv.covered).toBeCloseTo(600, 6);
+          expect(pv.avg).toBeCloseTo(
+            (100 * 166.75 + 300 * 300 + 500 * 133.25) / 600,
+            0,
+          );
+          // SOC coverage is independent of PV and no coarse average is manufactured.
+          const socPoints = result.series[1]!.points;
+          expect(observed(result, 'SOC', from, to).covered).toBeCloseTo(
+            150 + 133.25,
+            6,
+          );
+          expect(socPoints.every((point) => point.avg === null)).toBe(true);
+          expect(Math.min(...socPoints.map((p) => p.min ?? Infinity))).toBe(20);
+          expect(Math.max(...socPoints.map((p) => p.max ?? -Infinity))).toBe(
+            80,
+          );
+          const grid = observed(result, 'GRID_A', from, to);
+          expect(grid.covered).toBeCloseTo(20, 6);
+          expect(grid.avg).toBeCloseTo(300, 0);
+          if (maxPoints === 1) expect(result.gaps).toEqual([]);
+        },
+      );
+    });
+  });
+});
+
+describe('grid candidate coverage in energy totals', () => {
+  let db: TestDatabase, prisma: PrismaService, service: TotalsService;
+  const dayMs = (n: number) =>
+    Date.parse('2026-06-01T00:00:00Z') + n * 86_400_000;
+  const dateOf = (n: number) => new Date(dayMs(n)).toISOString().slice(0, 10);
+  const policy = (n: number, gridSource: string) => ({
+    effectiveFrom: new Date(dayMs(n)),
+    gridSource,
+    pvSource: 'INTEGRATED',
+    batterySource: 'INTEGRATED',
+    loadSource: 'DERIVED',
+    maxGapSec: 30,
+    validated: {},
+    note: `${gridSource} from day ${n}`,
+  });
+  const bucketRows = (
+    n: number,
+    values: Record<string, string | number | null>,
+  ) =>
+    Array.from({ length: 288 }, (_, i) => ({
+      bucketStart: new Date(dayMs(n) + i * 300_000),
+      calcVersion: LEDGER_ALGO_VERSION,
+      maxGapSecUsed: 30,
+      mappingVersion: 1,
+      computedAt: new Date(dayMs(n)),
+      gridCoveredSec: 0,
+      pvCoveredSec: 0,
+      batCoveredSec: 0,
+      loadCoveredSec: 0,
+      counterUnknownSec: [0, 0, 0, 0, 0, 0],
+      counterGapAllocMask: 0,
+      flags: 0,
+      ...values,
+    }));
+  const totalFor = async (n: number) =>
+    (await service.energyTotals(dateOf(n), dateOf(n), 'DAY')).total;
+  // The meter total (1814) is unavailable all day but all three phases are valid.
+  const totalMissingPhasesValid = {
+    gridCoveredSec: 0,
+    gridPhaseCoveredSec: 300,
+    gridImportPhaseWh: '10.000',
+    gridExportPhaseWh: '1.000',
+  };
+
+  beforeAll(async () => {
+    db = await createTestDatabase();
+    const env = parseEnv({
+      DATABASE_URL: db.url,
+      COLLECTOR_ENABLED: 'false',
+      SITE_TIMEZONE: 'UTC',
+    });
+    prisma = new PrismaService({ DATABASE_URL: db.url });
+    service = new TotalsService(prisma, env);
+    await prisma.accountingPolicy.createMany({
+      data: [
+        policy(0, 'METER_PER_PHASE'),
+        policy(1, 'METER_NET'),
+        policy(2, 'METER_PER_PHASE'),
+      ],
+    });
+    await prisma.energyInterval.createMany({
+      data: [
+        // Day 0 (PER_PHASE) and day 1 (NET) hold the same buckets.
+        ...bucketRows(0, totalMissingPhasesValid),
+        ...bucketRows(1, totalMissingPhasesValid),
+        // Day 2: historical PER_PHASE rows have NULL phase coverage and fall back to gridCoveredSec.
+        ...bucketRows(2, {
+          gridCoveredSec: 300,
+          gridImportPhaseWh: '10.000',
+          gridExportPhaseWh: '1.000',
+        }),
+        ...bucketRows(3, {
+          gridCoveredSec: 150,
+          gridImportPhaseWh: '10.000',
+          gridExportPhaseWh: '1.000',
+        }),
+        // Day 4: the total was valid all bucket but the phases only half of it.
+        ...bucketRows(4, {
+          gridCoveredSec: 300,
+          gridPhaseCoveredSec: 150,
+          gridImportNetWh: '20.000',
+          gridExportNetWh: '2.000',
+          gridImportPhaseWh: '10.000',
+          gridExportPhaseWh: '1.000',
+        }),
+        // Day 5: the total was valid but a phase was missing, so no PER_PHASE energy exists.
+        ...bucketRows(5, {
+          gridCoveredSec: 300,
+          gridPhaseCoveredSec: 0,
+          gridImportNetWh: '20.000',
+          gridExportNetWh: '2.000',
+        }),
+        // Day 6: one PER_PHASE range mixing legacy rows (NULL phase coverage, total coverage 0 and
+        // then 150 s) with new rows that carry their own phase coverage (200 s, total coverage 300 s).
+        ...bucketRows(6, {
+          gridImportPhaseWh: '10.000',
+          gridExportPhaseWh: '1.000',
+        }).slice(0, 96),
+        ...bucketRows(6, {
+          gridCoveredSec: 150,
+          gridImportPhaseWh: '10.000',
+          gridExportPhaseWh: '1.000',
+        }).slice(96, 192),
+        ...bucketRows(6, {
+          gridCoveredSec: 300,
+          gridPhaseCoveredSec: 200,
+          gridImportPhaseWh: '10.000',
+          gridExportPhaseWh: '1.000',
+        }).slice(192),
+      ],
+    });
+  });
+  afterAll(async () => {
+    await prisma?.close();
+    await db?.drop();
+  });
+
+  it('reports PER_PHASE available with its own coverage when only the meter total is missing, while NET is unavailable for the same buckets', async () => {
+    const phase = await totalFor(0);
+    expect(phase.gridImport).toMatchObject({
+      kwh: '2.880',
+      status: 'OK',
+      source: 'METER_PER_PHASE',
+    });
+    expect(phase.gridImport.coverage.toString()).toBe('1');
+    expect(phase.gridExport).toMatchObject({ kwh: '0.288', status: 'OK' });
+    expect(phase.gridExport.coverage.toString()).toBe('1');
+    const net = await totalFor(1);
+    expect(net.gridImport).toMatchObject({
+      kwh: null,
+      status: 'UNAVAILABLE',
+      source: 'METER_NET',
+    });
+    expect(net.gridImport.coverage.toString()).toBe('0');
+    expect(net.gridExport).toMatchObject({ kwh: null, status: 'UNAVAILABLE' });
+  });
+
+  it('falls back to the meter-total coverage for historical rows whose phase coverage is NULL', async () => {
+    const full = await totalFor(2);
+    expect(full.gridImport).toMatchObject({ kwh: '2.880', status: 'OK' });
+    expect(full.gridImport.coverage.toString()).toBe('1');
+    const partial = await totalFor(3);
+    expect(partial.gridImport).toMatchObject({
+      kwh: '2.880',
+      status: 'PARTIAL',
+    });
+    expect(partial.gridImport.coverage.toString()).toBe('0.5');
+  });
+
+  it('never reports the meter-total coverage for phase energy that integrated less time', async () => {
+    const phase = await totalFor(4);
+    expect(phase.gridImport).toMatchObject({
+      kwh: '2.880',
+      status: 'PARTIAL',
+      source: 'METER_PER_PHASE',
+    });
+    expect(phase.gridImport.coverage.toString()).toBe('0.5');
+    expect(phase.gridExport.coverage.toString()).toBe('0.5');
+  });
+
+  it('is unavailable for PER_PHASE when a phase was missing even though the meter total was valid', async () => {
+    const phase = await totalFor(5);
+    expect(phase.gridImport).toMatchObject({
+      kwh: null,
+      status: 'UNAVAILABLE',
+      source: 'METER_PER_PHASE',
+    });
+    expect(phase.gridImport.coverage.toString()).toBe('0');
+  });
+
+  it('sums per-row candidate coverage when one range mixes legacy NULL rows with rows carrying their own phase coverage', async () => {
+    const mixed = await totalFor(6);
+    // Legacy rows fall back to gridCoveredSec (96 x 0 s + 96 x 150 s); new rows use their own
+    // gridPhaseCoveredSec (96 x 200 s), never their 300 s meter-total coverage.
+    const expected = (96 * 150 + 96 * 200) / 86_400;
+    for (const value of [mixed.gridImport, mixed.gridExport]) {
+      expect(value.source).toBe('METER_PER_PHASE');
+      expect(value.status).toBe('PARTIAL');
+      expect(value.coverage.toNumber()).toBeCloseTo(expected, 10);
+    }
+    expect(mixed.gridImport.kwh).toBe('2.880');
+    expect(mixed.gridExport.kwh).toBe('0.288');
   });
 });

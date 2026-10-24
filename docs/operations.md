@@ -11,7 +11,7 @@ Never type or paste the database password, API tokens or the GHCR PAT into chat,
 | TrueNAS version | 25.04.2.6 (gate D0: >= 24.10 passes) | user |
 | Pool name | `<pool>` (to fill) | user |
 | NAS LAN IP | (to fill) | user |
-| Free RAM / disk | (to fill; the app needs about 1.5 GB RAM and 6 GB disk plus dumps) | user |
+| Free RAM / disk | (to fill; shipped backend/DB memory limits total 1.5 GB before other overhead. Do not size from the old 6 GB disk estimate: section 9 records a synthetic 400-day DB of 10,165,166,607 bytes before ledger generation; actual NAS sizing needs growth/WAL and backup headroom) | user supplies available resources; compose limits and historical local sizing evidence |
 | Stick wired IP | none yet: the stick is on Wi-Fi only; port 502 on its Wi-Fi IP was refused (2026-10-17) | user test |
 | App | one Compose app, `house-solar` (`deploy/truenas/compose.yaml`) | repo |
 
@@ -255,7 +255,7 @@ SHA-256 below was recorded **before changes** and matched again after the comple
 | 0002_accounting | `1535e134d7f885e1e1657f5139765201837e909c61e8ece848b746a43bb19c40` |
 | 0003_tariff | `0b0e57f14e1777bef2fdc4e08ecff1078526f69d37e85c71b39e54749864324d` |
 | 0004_raw_poll_monotonic | `1d686c816c86bbc4c60f15c6817cae508f5f0ae855812ba81ce0b11d923fe40d` |
-| 0005_soc_coverage | `614c548037e560d6f78716cf6ca61d9555bc8873e49da731a7dbcca4fbdf0eb2` |
+| 0005_soc_coverage | `614c548037e560d6f78716cf6ca61d9555bc8873e49da731a7dbcca4fbdf0eb2` | | 0006_grid_phase_coverage | `f1e58cac8d3db12489e2af0e2304086d9ea89b967997b2f166bef43765c6a836` |
 
 **Scope of the restore-only run above:** isolated synthetic persistence, not NAS/ZFS/permissions, unattended backup, physical accuracy or real-bill verification. The subsequent authorized local retention, dependency and unpacked-Electron checks are recorded in section 9. They do not authorize deployment, installation, hardware/cloud access, utility-meter validation or real-bill sign-off.
 
@@ -573,6 +573,47 @@ New tests: pruning defers while a replay holds the reservation and keeps Samples
 | `verify-v20.sh` with a `docker` wrapper whose `inspect` fails | `V20 FAIL: cannot record the volumes…`, exit 1 (it stopped at volume recording, before the final credential gate; the final gate's fail-closed capture is verified by reading, not by a dedicated fault run) |
 
 Not covered: the `pending` exclusion-bound loop (unobservable, see above), hard-link behaviour on the NAS filesystem, the packaged desktop executable.
+
+### Contract-discrepancy fixes — 2026-10-24
+
+Synthetic/local scope only: a uniquely named, loopback-only `postgres:18.6-bookworm` container (already cached; no pull) with `local-synthetic-only` credentials, plus the test helpers' per-run databases inside it. No NAS, hardware, cloud, registry, installer or real-bill access. The shipping collector stays disabled; `LEDGER_ALGO_VERSION` = 3 and `BILLING_CALC_VERSION` = 2 are unchanged; no migration, schema.gql or generated file changed. Everything above this subsection remains historical; only this subsection records this round.
+
+**Changes.**
+1. `collectorStatus`: `policyVersion` is the non-superseded policy in force at server time (`selectSegment`; `0` = none in force), `calcVersion` is `LEDGER_ALGO_VERSION` (running algorithm, not a claim that every bucket was recomputed), `monitoringSince` is the earliest `AccountingPolicy.effectiveFrom` (null without a policy; Sample retention no longer moves it). The read has no side effects. `phase2-exit.int-spec.ts` no longer asserts a non-null `monitoringSince` after five samples, because the policy is seeded only by the next ledger pass.
+2. `powerSeries`: `maxPoints` is a hard per-metric maximum (new `series-grid.ts`: smallest table width whose actual aligned count fits, else a 300 s-anchored multiple-of-300 s width). Before the fix a 366-day unaligned window returned 367 points at maxPoints 1, 2 and 50.
+3. GraphQL argument nullability: plan updated to the implemented non-null-with-default signatures; no resolver change.
+4. `METER_NET` is explicitly the register-1814 meter total; `METER_PER_PHASE` is the directional phase sum. Source already behaved this way (no bug); differing-total regressions were added and `docs/field-mapping.md` reworded. Software semantics only; physical accuracy, signs, CT location and cadence still await G3/G5/G6.
+
+**Pre-fix failures (reproduced before the fix).** `test/api.int-spec.ts` (the 12-test version at the time; a 13th test was added afterwards and was not run against pre-fix code): 5 failed | 7 passed (calcVersion expected 3 got 0; monitoringSince expected null got the earliest retained sample; policyVersion expected 1/2/3/8 got 0). Series (old width rule): `expected 367 to be less than or equal to 1` (also 2 and 50), `expected 2 to be less than or equal to 1` for a window straddling every table boundary; 4 failed | 15 passed. Item 4 and item 3 had no failing pre-state; a temporary mutation deriving NET from the phases made 5 compute/families tests fail, and the source was restored.
+
+**Fresh verification, run from `apps/backend`.**
+
+```
+npm run typecheck                      # clean
+npm run lint                           # oxlint --type-aware, no diagnostics
+npm run build                          # nest build, clean
+npx vitest run                         # 26 files, 218 tests passed
+DATABASE_URL=postgresql://solar:local-synthetic-only@127.0.0.1:<ephemeral>/postgres \
+  npx vitest run --config ./vitest.config.int.ts   # 24 files, 293 tests passed
+```
+
+Four independent reviewer passes (one per item) found no defect; their test-quality notes were applied (reverse-ordered version/`effectiveFrom` policy case; null-versus-zero assertions on the directional NET cases). The series reviewer reported additional ad hoc sweeps of synthetic grids and SQL anchor arithmetic; no artifact of those sweeps is retained, so they are not counted as evidence here. A later independent review noted that `METER_PER_PHASE` shared `gridCoveredSec`/`GRID_GAP` with `METER_NET`; this was then fixed by migration `0006_grid_phase_coverage` (see the next subsection).
+
+**Acceptance effect.** Software-level only: V3 now distinguishes meter-total NET from the phase sum; no other V-row changes status. V10-V18, V20 and the V23-V25 gaps stay open. Desktop (`npm test -w apps/desktop`), the installer, `deploy/dev/verify-*.sh` scripts and any NAS/hardware/bill check were **not** run.
+
+**Cleanup.** Removed the container `solar-fix-synth-pg-7f3a` (label `owner=solar-fix-synth`) and its anonymous data volume, verified by creation time and PG 18 contents before removal; no existing container, volume or database was touched.
+
+### Grid candidate coverage (migration 0006) — 2026-10-24
+
+Approved follow-up to the contract-discrepancy round above. Synthetic/local only: uniquely named loopback `postgres:18.6-bookworm` containers (cached image, no pull) removed afterwards with `docker rm -fv`.
+
+**Change.** `EnergyInterval.gridPhaseCoveredSec` is an additive nullable INTEGER with no backfill (migration `0006_grid_phase_coverage`, SHA-256 `f1e58cac8d3db12489e2af0e2304086d9ea89b967997b2f166bef43765c6a836`; 0001-0005 are byte-identical to HEAD). It is the all-three-phases-valid seconds (the minimum over the phase integrations), so `METER_PER_PHASE` no longer borrows the meter-total `gridCoveredSec`. Totals, reconciliation and billing pick coverage by active grid source (NET → `gridCoveredSec`; PER_PHASE → `gridPhaseCoveredSec`, historical NULL → `gridCoveredSec`; INVERTER_COUNTER → counter coverage). `LEDGER_ALGO_VERSION` 3 and `BILLING_CALC_VERSION` 2 are unchanged: legacy rows keep NULL and their original values until an ordinary recompute rewrites them, ledger recovery verification ignores a stored NULL in this column so it never rewrites old buckets by itself, and stored `BillingPeriodResult`s are not invalidated, so a PER_PHASE period changes only when it or its ledger rows are recomputed. The shared `GRID_GAP` flag is unchanged and can over-report a gap for the active candidate, never hide one. `schema.gql` is unchanged; the checked-in Prisma client was regenerated with the repository command. `deploy/dev/verify-restore.sh` and `verify-restore-helper.mjs` hard-code the migration list and were updated for 0006.
+
+**Pre-fix failures** (migration and client applied, compute/consumers not wired): `compute.spec.ts` 5 failed | 29 passed; `totals.int-spec` PER_PHASE with total missing returned `kwh: null, status UNAVAILABLE` instead of `2.880 / OK`; `reconciliation.int-spec` `expected +0 to be 1`; `billing.int-spec` coverage `['0.0000','0.5000','1.0000']` instead of `['1.0000','0.5000','0.3333']`; `ledger-crash.int-spec` with the NULL tolerance disabled rewrote a legacy bucket.
+
+**Fresh verification, from `apps/backend`:** `tsc --noEmit` clean; `npm run lint` no diagnostics; `npm run build` clean; `npx vitest run` 26 files, 225 tests passed; integration `vitest run --config ./vitest.config.int.ts` 24 files, 302 tests passed; `npm test -w apps/desktop` 16 files, 95 tests passed. Migrations 0001-0006 applied from empty matched `schema.prisma` (`prisma migrate diff`: no difference). Two independent reviewer passes (compute/ledger/consumers and deploy/migration) found no defect; their test-gap notes were applied (mixed legacy/new period; CLOCK_STEP and gap cases).
+
+**Not run.** `deploy/dev/verify-restore.sh`, `verify-v19.sh`, `verify-v20.sh`: no `house-solar-backend` image exists locally and building one needs `npm ci` (a dependency install/network fetch), which this work did not do, so the restore drill (V11/V21 local variant) has **not** been rerun for 0006 and its edited scripts are verified only by `bash -n`/`node --check` and review. NAS, hardware, installer and real-bill checks remain open.
 
 ### Dependency risk disclosure
 

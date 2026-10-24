@@ -19,6 +19,7 @@ import { APP_ENV } from '../config/env.token.js';
 import type { Env } from '../config/env.js';
 import { ReconciliationService } from '../reconciliation/reconciliation.service.js';
 import { selectSegment } from '../accounting/policy.js';
+import { gridMeterCoveredSec } from '../accounting/families.js';
 import {
   DEFAULT_MAX_GAP_SEC,
   LEDGER_ALGO_VERSION,
@@ -694,7 +695,10 @@ export class BillingService
                         row.counterUnknownSec[2] ?? 300,
                       ),
                   )
-                : Math.min(overlap, Math.max(0, row.gridCoveredSec));
+                : Math.min(
+                    overlap,
+                    Math.max(0, gridMeterCoveredSec(row, source)),
+                  );
           if (
             source === 'INVERTER_COUNTER' &&
             row.counterGapAllocMask & ((1 << 1) | (1 << 2))

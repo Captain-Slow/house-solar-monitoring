@@ -271,6 +271,10 @@ model EnergyInterval {
   loadCounterWh         Decimal? @db.Decimal(12, 3)
 
   gridCoveredSec      Int // 0..300
+  // METER_PER_PHASE coverage: seconds where all three normalized phases were valid, i.e. exactly the
+  // time its gridImportPhaseWh/gridExportPhaseWh integrate. NULL = row computed before migration
+  // 0006_grid_phase_coverage (coverage unknown); readers then fall back to gridCoveredSec.
+  gridPhaseCoveredSec Int?
   pvCoveredSec        Int
   batCoveredSec       Int
   loadCoveredSec      Int

@@ -82,6 +82,19 @@ describe('family validity', () => {
     ).toBeNull();
   });
 
+  it('takes grid net and derived load from the meter total alone, never from the phases', () => {
+    // Phases sum to -10 W; the meter total says +700 W import.
+    const total = familyPowers({ ...sample, gridW: 700 });
+    expect(total.grid).toEqual({ net: 700, phases: [1000, -500, -510] });
+    expect(total.load).toBe(670);
+    const unavailable = familyPowers({ ...sample, gridW: null });
+    expect(unavailable.grid).toEqual({
+      net: null,
+      phases: [1000, -500, -510],
+    });
+    expect(unavailable.load).toBeNull();
+  });
+
   describe('battery validity follows the sample mapping source', () => {
     const { BLOCK_INVALID_0: block0, BLOCK_INVALID_1800: block1800 } =
       SampleFlag;

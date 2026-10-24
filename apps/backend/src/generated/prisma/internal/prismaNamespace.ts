@@ -2125,6 +2125,7 @@ export const EnergyIntervalScalarFieldEnum = {
   loadDerivedWh: 'loadDerivedWh',
   loadCounterWh: 'loadCounterWh',
   gridCoveredSec: 'gridCoveredSec',
+  gridPhaseCoveredSec: 'gridPhaseCoveredSec',
   pvCoveredSec: 'pvCoveredSec',
   batCoveredSec: 'batCoveredSec',
   loadCoveredSec: 'loadCoveredSec',

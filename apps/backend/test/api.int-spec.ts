@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -14,7 +14,10 @@ import { createApp } from '../src/main.js';
 import { replaceDevice } from '../src/cli/device.js';
 import { TokenService } from '../src/auth/token.service.js';
 import { PrismaService } from '../src/db/prisma.service.js';
+import { LEDGER_ALGO_VERSION } from '../src/accounting/types.js';
+import { ensurePolicyV1 } from '../src/accounting/policy.js';
 import { ApiResolver } from '../src/graphql/api.resolver.js';
+import { RetentionService } from '../src/collector/retention.service.js';
 import { ReconciliationService } from '../src/reconciliation/reconciliation.service.js';
 import { TlsService } from '../src/tls/tls.service.js';
 import {
@@ -391,6 +394,11 @@ describe('monitoring GraphQL', () => {
   });
 
   it('reports collector metadata and enforces GraphQL query depth', async () => {
+    // Samples exist but no accounting policy has been seeded yet: the accounting start is
+    // undefined, so policyVersion keeps its 0 sentinel and monitoringSince is null (the first
+    // retained Sample is retention-dependent and must not stand in for it).
+    expect(await prisma.sample.count()).toBeGreaterThan(0);
+    expect(await prisma.accountingPolicy.count()).toBe(0);
     const result = await query(
       '{ collectorStatus { acquisitionSource state device { id deviceKey } mappingVersion policyVersion calcVersion monitoringSince lastBackupAt tlsCertExpiresAt } devices { id model } }',
       collectorSchema,
@@ -401,9 +409,11 @@ describe('monitoring GraphQL', () => {
       state: 'RUNNING',
       mappingVersion: 1,
       policyVersion: 0,
-      calcVersion: 0,
+      calcVersion: LEDGER_ALGO_VERSION,
+      monitoringSince: null,
     });
-    expect(result.data?.collectorStatus.monitoringSince).toBeTruthy();
+    // The read has no side effects: it never seeds the policy.
+    expect(await prisma.accountingPolicy.count()).toBe(0);
     expect(result.data?.collectorStatus.lastBackupAt).toBe(
       '2026-10-01T00:00:00.000Z',
     );
@@ -559,5 +569,129 @@ describe('monitoring GraphQL', () => {
     } finally {
       await rm(unreadable, { recursive: true, force: true });
     }
+  });
+
+  describe('collectorStatus accounting metadata', () => {
+    const HOUR = 3_600_000;
+    const DAY = 24 * HOUR;
+    const metadataSchema = z.object({
+      collectorStatus: z.object({
+        policyVersion: z.number(),
+        calcVersion: z.number(),
+        monitoringSince: z.string().nullable(),
+      }),
+    });
+    async function metadata() {
+      const result = await query(
+        '{ collectorStatus { policyVersion calcVersion monitoringSince } }',
+        metadataSchema,
+      );
+      expect(result.errors).toHaveLength(0);
+      return result.data!.collectorStatus;
+    }
+    const addPolicy = (
+      effectiveFrom: Date,
+      supersededByVersion: number | null = null,
+    ) =>
+      prisma.accountingPolicy.create({
+        data: {
+          effectiveFrom,
+          supersededByVersion,
+          gridSource: 'METER_NET',
+          pvSource: 'INTEGRATED',
+          batterySource: 'INTEGRATED',
+          loadSource: 'DERIVED',
+          maxGapSec: 30,
+          validated: {},
+          note: 'collectorStatus metadata test',
+        },
+      });
+    afterEach(async () => {
+      const horizon = new Date(Date.now() - DAY);
+      await prisma.accountingPolicy.deleteMany();
+      await prisma.sample.deleteMany({
+        where: { observedAt: { lt: horizon } },
+      });
+      await prisma.rawPoll.deleteMany({
+        where: { observedAt: { lt: horizon } },
+      });
+    });
+
+    it('keeps monitoringSince at the accounting start when retention prunes the oldest Samples', async () => {
+      const old = new Date(Date.now() - 90 * DAY);
+      await seedSample(old, 0);
+      const seeded = await ensurePolicyV1(prisma);
+      expect(seeded?.effectiveFrom).toEqual(old);
+      expect(await metadata()).toEqual({
+        policyVersion: seeded!.version,
+        calcVersion: LEDGER_ALGO_VERSION,
+        monitoringSince: old.toISOString(),
+      });
+      const pruned = await new RetentionService(prisma).runOnce(new Date(), {
+        RAW_RETENTION_DAYS: 30,
+        SAMPLE_RETENTION_DAYS: 30,
+      });
+      expect(pruned.deletedSamples).toBe(1);
+      const oldest = await prisma.sample.findFirstOrThrow({
+        orderBy: { observedAt: 'asc' },
+      });
+      expect(oldest.observedAt.getTime()).toBeGreaterThan(old.getTime());
+      expect(await metadata()).toEqual({
+        policyVersion: seeded!.version,
+        calcVersion: LEDGER_ALGO_VERSION,
+        monitoringSince: old.toISOString(),
+      });
+    });
+
+    it('moves monitoringSince backward when delayed earlier data re-anchors the policy', async () => {
+      await seedSample(new Date(Date.now() - 90 * DAY), 0);
+      const seeded = await ensurePolicyV1(prisma);
+      const earlier = new Date(Date.now() - 95 * DAY);
+      await seedSample(earlier, 0);
+      const moved = await ensurePolicyV1(prisma);
+      expect(moved?.version).toBe(seeded!.version);
+      expect(await metadata()).toMatchObject({
+        policyVersion: seeded!.version,
+        monitoringSince: earlier.toISOString(),
+      });
+    });
+
+    it('ignores future and superseded policies when reporting policyVersion', async () => {
+      const current = await addPolicy(new Date(Date.now() - 90 * DAY));
+      const future = await addPolicy(new Date(Date.now() + HOUR));
+      // Newer than `current` and already in effect by date, but replaced by another version.
+      await addPolicy(new Date(Date.now() - HOUR), future.version);
+      expect(await metadata()).toEqual({
+        policyVersion: current.version,
+        calcVersion: LEDGER_ALGO_VERSION,
+        monitoringSince: current.effectiveFrom.toISOString(),
+      });
+      await prisma.accountingPolicy.deleteMany({
+        where: { version: { not: future.version } },
+      });
+      expect((await metadata()).policyVersion).toBe(0);
+    });
+
+    it('reports the policy selectSegment picks when several versions are effective', async () => {
+      await addPolicy(new Date(Date.now() - 90 * DAY));
+      await addPolicy(new Date(Date.now() - 2 * HOUR));
+      const latest = await addPolicy(new Date(Date.now() - HOUR));
+      expect((await metadata()).policyVersion).toBe(latest.version);
+      // Equal effectiveFrom: the higher version wins.
+      const tied = await addPolicy(latest.effectiveFrom);
+      expect((await metadata()).policyVersion).toBe(tied.version);
+    });
+
+    it('selects by effectiveFrom, not by the highest version number', async () => {
+      // Version 2 starts earlier than version 1 (e.g. a retroactive start moved back); both are
+      // active and in effect. selectSegment picks the later effectiveFrom, so version 1 wins.
+      const laterStart = await addPolicy(new Date(Date.now() - HOUR));
+      const earlierStart = await addPolicy(new Date(Date.now() - 30 * DAY));
+      expect(earlierStart.version).toBeGreaterThan(laterStart.version);
+      expect(await metadata()).toMatchObject({
+        policyVersion: laterStart.version,
+        monitoringSince: earlierStart.effectiveFrom.toISOString(),
+      });
+    });
   });
 });

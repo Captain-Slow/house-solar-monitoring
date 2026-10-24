@@ -191,6 +191,79 @@ describe('accounting API over HTTPS', () => {
         'BAD_USER_INPUT',
       );
   });
+  it('defaults omitted list/size arguments but rejects explicit null, keeping dataQualityEvents.first nullable', async () => {
+    const range =
+      'from:"2026-01-01T00:00:00.000Z",to:"2026-01-02T00:00:00.000Z"';
+    const defaulted = await request(
+      `{ powerSeries(${range},metrics:[PV]) { bucketSeconds } billingPeriods { edges { cursor } } meterReadings { edges { cursor } } calculationRuns { edges { cursor } } }`,
+      viewer,
+    );
+    expect(defaulted.errors).toBeUndefined();
+    // One day at the default 1000 points needs 300 s buckets (2000 points would give 60 s).
+    expect(defaulted.data?.powerSeries).toEqual({ bucketSeconds: 300 });
+    const introspected = z
+      .object({
+        __type: z.object({
+          fields: z.array(
+            z.object({
+              name: z.string(),
+              args: z.array(
+                z.object({
+                  name: z.string(),
+                  defaultValue: z.string().nullable(),
+                  type: z.object({ kind: z.string() }),
+                }),
+              ),
+            }),
+          ),
+        }),
+      })
+      .parse(
+        (
+          await request(
+            '{ __type(name:"Query") { fields { name args { name defaultValue type { kind } } } } }',
+            viewer,
+          )
+        ).data,
+      );
+    const declared = Object.fromEntries(
+      introspected.__type.fields.flatMap(({ name, args }) =>
+        args.map((arg) => [`${name}.${arg.name}`, arg]),
+      ),
+    );
+    for (const [path, defaultValue] of [
+      ['powerSeries.maxPoints', '1000'],
+      ['billingPeriods.first', '24'],
+      ['meterReadings.first', '50'],
+      ['calculationRuns.first', '20'],
+    ] as const)
+      expect(declared[path]).toMatchObject({
+        defaultValue,
+        type: { kind: 'NON_NULL' },
+      });
+    expect(declared['dataQualityEvents.first']).toMatchObject({
+      defaultValue: '100',
+      type: { kind: 'SCALAR' },
+    });
+    for (const query of [
+      `{ powerSeries(${range},metrics:[PV],maxPoints:null) { bucketSeconds } }`,
+      '{ billingPeriods(first:null) { edges { cursor } } }',
+      '{ meterReadings(first:null) { edges { cursor } } }',
+      '{ calculationRuns(first:null) { edges { cursor } } }',
+    ]) {
+      const rejected = await request(query, viewer);
+      expect(rejected.data).toBeUndefined();
+      expect(rejected.errors?.[0]?.extensions.code).toBe(
+        'GRAPHQL_VALIDATION_FAILED',
+      );
+    }
+    const nullable = await request(
+      `{ dataQualityEvents(${range},first:null) { edges { cursor } } }`,
+      viewer,
+    );
+    expect(nullable.errors).toBeUndefined();
+    expect(nullable.data?.dataQualityEvents).toEqual({ edges: [] });
+  });
   it('rejects monetary values outside the exact database decimal representation', async () => {
     for (const [stamp, importKwh, resolutionKwh] of [
       ['2026-02-01T00:00:00.000Z', '1000000000', '1'],

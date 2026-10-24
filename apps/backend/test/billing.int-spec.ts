@@ -758,6 +758,80 @@ describe('billing service from the ledger', () => {
     );
   });
 
+  it('measures METER_PER_PHASE billing coverage by its own column, with historical NULL falling back to the meter-total coverage', async () => {
+    const { row } = await makeTariff();
+    const dates = ['2026-02-13', '2026-02-14', '2026-02-15'];
+    for (const date of dates) await seedDay(date);
+    const wholeDay = (date: string) => ({
+      bucketStart: { gte: at(date, 0), lt: at(date, 288) },
+    });
+    // The meter total (1814) is unavailable all day while all three phases are valid.
+    await prisma.energyInterval.updateMany({
+      where: wholeDay(dates[0]!),
+      data: {
+        gridImportNetWh: null,
+        gridExportNetWh: null,
+        gridCoveredSec: 0,
+        gridPhaseCoveredSec: 300,
+      },
+    });
+    // Historical rows have NULL phase coverage: the half-covered total stands in for it.
+    await prisma.energyInterval.updateMany({
+      where: wholeDay(dates[1]!),
+      data: { gridCoveredSec: 150 },
+    });
+    // The total was valid all day but the phases only a third of it.
+    await prisma.energyInterval.updateMany({
+      where: wholeDay(dates[2]!),
+      data: { gridCoveredSec: 300, gridPhaseCoveredSec: 100 },
+    });
+    await createPolicyVersion(
+      prisma,
+      {
+        effectiveFrom: at(dates[0]!, 0),
+        gridSource: 'METER_PER_PHASE',
+        pvSource: 'INTEGRATED',
+        batterySource: 'INTEGRATED',
+        loadSource: 'DERIVED',
+        maxGapSec: 30,
+        note: 'Per-phase source with its own coverage',
+      },
+      400,
+      now,
+    );
+    const coverage: string[] = [];
+    try {
+      for (const date of dates) {
+        const period = await tariff.upsertBillingPeriod({
+          tariffId: row.id,
+          startDate: date,
+          endDate: date,
+          openingCreditLots: [],
+        });
+        coverage.push(
+          (await billing.computePeriod(period.id, now)).coverage.toFixed(4),
+        );
+      }
+    } finally {
+      // Later tests assume the METER_NET policy from the suite setup, even if this one fails.
+      await createPolicyVersion(
+        prisma,
+        {
+          effectiveFrom: at('2026-02-16', 0),
+          gridSource: 'METER_NET',
+          pvSource: 'INTEGRATED',
+          batterySource: 'INTEGRATED',
+          loadSource: 'DERIVED',
+          maxGapSec: 30,
+          note: 'Restore net source',
+        },
+        400,
+        now,
+      );
+    }
+    expect(coverage).toEqual(['1.0000', '0.5000', '0.3333']);
+  });
+
   it('measures whole-period ledger coverage even when half the tariff dates have no version', async () => {
     const { row } = await makeTariff(flat, '2026-02-21');
     await seedDay('2026-02-20');

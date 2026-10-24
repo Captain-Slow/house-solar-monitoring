@@ -156,6 +156,8 @@ export interface IntervalRow {
   loadDerivedWh: number | null;
   loadCounterWh: number | null;
   gridCoveredSec: number;
+  /** Seconds in which all three normalized phases were valid: exactly what gridImport/ExportPhaseWh integrate. */
+  gridPhaseCoveredSec: number;
   pvCoveredSec: number;
   batCoveredSec: number;
   /** Occupied valid SOC observation slots (10 s each), independent of integrated battery power. */

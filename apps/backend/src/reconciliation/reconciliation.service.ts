@@ -11,7 +11,11 @@ import {
   type ExclusionWindow,
 } from '../accounting/types.js';
 import { integrateSeries } from '../accounting/integrate.js';
-import { familyPowers, isExcluded } from '../accounting/families.js';
+import {
+  familyPowers,
+  gridMeterCoveredSec,
+  isExcluded,
+} from '../accounting/families.js';
 import { initialCounterStates, stepCounter } from '../accounting/counters.js';
 import { SampleFlag } from '../collector/types.js';
 import {
@@ -290,14 +294,14 @@ export class ReconciliationService {
           item.coveredImport +=
             source === 'INVERTER_COUNTER'
               ? 300 - (row.counterUnknownSec[1] ?? 300)
-              : row.gridCoveredSec;
+              : gridMeterCoveredSec(row, source);
         }
         if (row[exportField] !== null) {
           item.exp = item.exp.plus(String(row[exportField]));
           item.coveredExport +=
             source === 'INVERTER_COUNTER'
               ? 300 - (row.counterUnknownSec[2] ?? 300)
-              : row.gridCoveredSec;
+              : gridMeterCoveredSec(row, source);
         }
       }
     }
