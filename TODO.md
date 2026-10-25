@@ -6,13 +6,8 @@ verified locally (synthetic data only). Nothing below is closed by that work. Ac
 
 ## A. Decisions needed from the owner
 
-- [ ] **Uncommitted desktop redesign.** The working tree holds work that is not part of the contract fixes:
-  modified `apps/desktop/**`, `package-lock.json`, `packages/contracts/src/bridge.ts`, new components
-  (`components/ui/`, `lib/`, `styles/`, `assets/`, window chrome and panels), `DESKTOP_LIQUID_GLASS_REDESIGN_PLAN.md`,
-  `DESKTOP_UI_AUDIT_PLAN.md`, `docs/ui-audit/`, `apps/desktop/THIRD_PARTY_NOTICES.md`. Decide: review and commit,
-  stash, or discard. It changes dependencies (lockfile), so review before committing.
-- [ ] **`PLAN_MODE_PROMPT.txt`** (untracked; the plan cites it as the original requirements and hardware ground
-  truth). Decide: commit it as the requirements record, or add it to `.gitignore`.
+- [x] **Desktop redesign work.** Resolved: it was committed by a separate session as `c12d20c` and `d5471ae` (already on `origin/main`). The only leftover untracked `DESKTOP_UI_AUDIT_PLAN.md` was purged on 2026-10-25. The redesign commits themselves were not reviewed or tested by this contract-fix work; review them separately if needed.
+- [x] **`PLAN_MODE_PROMPT.txt`.** Purged on 2026-10-25 (owner decision). A backup of both purged files is outside the repo at `D:/Github/_house-solar-purged-backup-2026-10-25/untracked.tar`; delete it when no longer wanted. No tracked doc referenced it; the plan and `docs/field-mapping.md` are now the record.
 - [ ] **Line endings.** Git warns "LF will be replaced by CRLF" (local `core.autocrlf`). Decide whether to add
   `.gitattributes` rules. Current convention: `SOLAR_MONITORING_PLAN.md` and `docs/operations.md` are CRLF,
   `docs/field-mapping.md` is LF-only.
