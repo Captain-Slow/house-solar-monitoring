@@ -70,9 +70,9 @@ describe("connection and numeric presentation", () => {
     const zero = renderToStaticMarkup(
       <Metric label="Home" {...powerValue(power(0) as Live["pv"])} />,
     );
-    expect(missing).toContain('title="METER_LINK_DOWN"');
+    expect(missing).toContain('data-reason="METER_LINK_DOWN"');
     expect(missing).toContain("—");
-    expect(zero).toContain("0 W");
-    expect(zero).not.toContain('title="METER_LINK_DOWN"');
+    expect(zero.replace(/<[^>]+>/g, "")).toContain("0 W");
+    expect(zero).not.toContain('data-reason="METER_LINK_DOWN"');
   });
 });

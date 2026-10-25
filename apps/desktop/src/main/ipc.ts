@@ -88,6 +88,21 @@ export function registerIpc(
     authorize(event);
     await client.clear();
   });
+  ipcMain.handle("solar:window:minimize", (event) => {
+    authorize(event);
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+  ipcMain.handle("solar:window:toggle-maximize", (event) => {
+    authorize(event);
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.handle("solar:window:close", (event) => {
+    authorize(event);
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
 }
 
 export function broadcastConnection(state: ConnectionState): void {
@@ -95,4 +110,17 @@ export function broadcastConnection(state: ConnectionState): void {
     if (!window.isDestroyed())
       window.webContents.send("solar:connection-state", state);
   }
+}
+
+/** Tells the renderer whether the window is maximised so the caption button shows Maximize or Restore. */
+export function bindWindowState(window: BrowserWindow): void {
+  const send = (): void => {
+    if (!window.isDestroyed())
+      window.webContents.send("solar:window:maximized", window.isMaximized());
+  };
+  window.on("maximize", send);
+  window.on("unmaximize", send);
+  window.on("enter-full-screen", send);
+  window.on("leave-full-screen", send);
+  window.webContents.on("did-finish-load", send);
 }

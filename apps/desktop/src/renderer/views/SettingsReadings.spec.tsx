@@ -45,6 +45,13 @@ async function loadMore(): Promise<void> {
   });
 }
 
+/** The readings live in the "Meter readings" dialog; every test opens it first. */
+async function openMeterReadings(): Promise<void> {
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Meter readings/ }),
+  );
+}
+
 describe("Settings meter readings", () => {
   it("shows an omitted export reading as a reasoned dash rather than zero kWh", async () => {
     installBridge((op) =>
@@ -72,10 +79,14 @@ describe("Settings meter readings", () => {
         : unavailable,
     );
     renderWithClient(<Settings role="VIEWER" onReset={() => {}} />);
+    await openMeterReadings();
     const row = await screen.findByText(/^#7 · .* · import /);
     expect(row.textContent).toContain("import 0 kWh");
-    const exported = within(row).getByTitle("Export reading not provided");
-    expect(exported.textContent).toBe("—");
+    const exported = row.querySelector(
+      '[data-reason="Export reading not provided"]',
+    );
+    expect(exported).not.toBeNull();
+    expect(exported?.textContent).toBe("—");
     expect(row.textContent).not.toContain("export 0 kWh");
   });
 });
@@ -102,6 +113,7 @@ describe("Settings meter readings beyond the first page", () => {
     const { client } = renderWithClient(
       <Settings role="ADMIN" onReset={() => {}} />,
     );
+    await openMeterReadings();
     await waitFor(() => expect(listedReadings()).toEqual(range(50)));
     fireEvent.change(screen.getByLabelText("Meter reading ID"), {
       target: { value: "10" },
@@ -165,6 +177,7 @@ describe("Settings meter readings beyond the first page", () => {
       });
       vi.spyOn(window, "confirm").mockReturnValue(true);
       renderWithClient(<Settings role="ADMIN" onReset={() => {}} />);
+      await openMeterReadings();
       await waitFor(() => expect(listedReadings()).toEqual(range(50)));
       await loadMore();
       await waitFor(() => expect(listedReadings()).toEqual(range(100)));
@@ -220,6 +233,7 @@ describe("Settings meter readings beyond the first page", () => {
     const { client } = renderWithClient(
       <Settings role="ADMIN" onReset={() => {}} />,
     );
+    await openMeterReadings();
     await waitFor(() => expect(listedReadings()).toEqual(range(50)));
     const stalePage = await readings.query("MeterReadings", {
       first: 50,
@@ -271,6 +285,7 @@ describe("Settings meter readings beyond the first page", () => {
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     renderWithClient(<Settings role="ADMIN" onReset={() => {}} />);
+    await openMeterReadings();
 
     await waitFor(() => expect(listedReadings()).toEqual(range(50)));
     await loadMore();

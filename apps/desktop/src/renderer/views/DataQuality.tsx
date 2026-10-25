@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { PanelShell } from "../components/panel-shell";
 import type {
   AccountingPoliciesQuery,
   CalculationRunsQuery,
@@ -10,6 +11,14 @@ import type {
 } from "@solar/contracts/generated/graphql";
 import { useMeterReadings, useSolarQuery } from "../api";
 import { MeterReadingsPager, Message } from "../components/Display";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { DataTable, Td, Th, Tr } from "../components/ui/data-table";
+import { EmptyList } from "../components/ui/empty";
+import { Input } from "../components/ui/input";
+import { NativeSelect } from "../components/ui/native-select";
+import { Reason } from "../components/ui/reason";
+import { statusTone } from "../components/ui/status-tone";
 import {
   coveragePercent,
   decimal,
@@ -18,6 +27,22 @@ import {
   siteRangeInstants,
   siteLocalDate,
 } from "../models";
+
+function Tile({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="dashboard-tile flex shrink-0 flex-col gap-3 border-none p-4 shadow-md/5">
+      <h3 className="text-[10px] leading-4 font-medium tracking-[0.04em] text-muted-foreground uppercase">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+const fieldLabel = "flex flex-col gap-1.5 text-xs text-muted-foreground";
+const listClass =
+  "divide-y divide-border rounded-lg border border-border text-xs";
+const itemClass = "px-3 py-2";
 
 /** Event paging belongs to one date range: keyed by that range, a new range always starts at its first page. */
 function QualityEvents({ from, to }: { from: string; to: string }) {
@@ -35,21 +60,28 @@ function QualityEvents({ from, to }: { from: string; to: string }) {
   const { edges, pageInfo } = events.data.dataQualityEvents;
   return (
     <>
-      <ul>
-        {edges.map(({ node }) => (
-          <li key={node.id}>
-            {node.kind} · {localInstant(node.startedAt)} –{" "}
-            {localInstant(node.endedAt)} · device {node.deviceId ?? "—"}
-          </li>
-        ))}
-      </ul>
-      <button
+      {edges.length === 0 ? (
+        <EmptyList>No quality events in this range.</EmptyList>
+      ) : (
+        <ul className={listClass}>
+          {edges.map(({ node }) => (
+            <li key={node.id} className={itemClass}>
+              {node.kind} · {localInstant(node.startedAt)} –{" "}
+              {localInstant(node.endedAt)} · device {node.deviceId ?? "—"}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
         disabled={!pageInfo.hasNextPage}
         onClick={() => setCursor(pageInfo.endCursor ?? null)}
       >
         More events
-      </button>
+      </Button>
     </>
   );
 }
@@ -116,38 +148,45 @@ export function DataQuality({
   );
   const status = collector.data?.collectorStatus;
   return (
-    <section aria-labelledby="quality-title">
-      <h2 id="quality-title">Data Quality</h2>
-      <div className="card">
-        <h3>Collector &amp; device</h3>
+    <PanelShell
+      title="Data Quality"
+      titleId="quality-title"
+      contentClassName="gap-4"
+    >
+      <Tile title="Collector & device">
         {status ? (
-          <dl className="facts">
-            <dt>State</dt>
+          <dl className="grid grid-cols-[minmax(140px,250px)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-xs">
+            <dt className="text-muted-foreground">State</dt>
             <dd>
-              {status.state} · {status.acquisitionSource}
+              <Badge variant="secondary" className={statusTone(status.state)}>
+                {status.state}
+              </Badge>{" "}
+              · {status.acquisitionSource}
             </dd>
-            <dt>Last success</dt>
+            <dt className="text-muted-foreground">Last success</dt>
             <dd>{localInstant(status.lastSuccessAt)}</dd>
-            <dt>Last error</dt>
+            <dt className="text-muted-foreground">Last error</dt>
             <dd>
               {status.lastError ?? "None"} · {localInstant(status.lastErrorAt)}
             </dd>
-            <dt>Next retry</dt>
+            <dt className="text-muted-foreground">Next retry</dt>
             <dd>{localInstant(status.nextRetryAt)}</dd>
-            <dt>Monitoring since</dt>
+            <dt className="text-muted-foreground">Monitoring since</dt>
             <dd>{localInstant(status.monitoringSince)}</dd>
-            <dt>Last backup</dt>
+            <dt className="text-muted-foreground">Last backup</dt>
             <dd>{localInstant(status.lastBackupAt)}</dd>
-            <dt>TLS certificate expiry</dt>
+            <dt className="text-muted-foreground">TLS certificate expiry</dt>
             <dd>{localInstant(status.tlsCertExpiresAt)}</dd>
-            <dt>Site day timezone</dt>
+            <dt className="text-muted-foreground">Site day timezone</dt>
             <dd>{status.siteTimezone}</dd>
-            <dt>Mapping / policy / calculation versions</dt>
+            <dt className="text-muted-foreground">
+              Mapping / policy / calculation versions
+            </dt>
             <dd>
               {status.mappingVersion} / {status.policyVersion} /{" "}
               {status.calcVersion}
             </dd>
-            <dt>Current device</dt>
+            <dt className="text-muted-foreground">Current device</dt>
             <dd>
               {status.device
                 ? `${status.device.deviceKey} · ${status.device.model}`
@@ -159,53 +198,62 @@ export function DataQuality({
             {collector.error?.message ?? "Loading collector status…"}
           </Message>
         )}
-        <h4>Devices</h4>
+        <h4 className="pt-1 text-sm font-semibold">Devices</h4>
         {devices.data ? (
-          <ul>
-            {devices.data.devices.map((device) => (
-              <li key={device.id}>
-                {device.deviceKey} · {device.model} · first{" "}
-                {localInstant(device.firstSeenAt)} · last{" "}
-                {localInstant(device.lastSeenAt)}
-                {device.retiredAt &&
-                  ` · retired ${localInstant(device.retiredAt)}`}
-              </li>
-            ))}
-          </ul>
+          devices.data.devices.length === 0 ? (
+            <EmptyList>No devices recorded.</EmptyList>
+          ) : (
+            <ul className={listClass}>
+              {devices.data.devices.map((device) => (
+                <li key={device.id} className={itemClass}>
+                  {device.deviceKey} · {device.model} · first{" "}
+                  {localInstant(device.firstSeenAt)} · last{" "}
+                  {localInstant(device.lastSeenAt)}
+                  {device.retiredAt &&
+                    ` · retired ${localInstant(device.retiredAt)}`}
+                </li>
+              ))}
+            </ul>
+          )
         ) : (
           <Message>{devices.error?.message ?? "Loading devices…"}</Message>
         )}
-        <h4>Accounting policies</h4>
+        <h4 className="pt-1 text-sm font-semibold">Accounting policies</h4>
         {policies.data ? (
-          <ul>
-            {policies.data.accountingPolicies.map((policy) => (
-              <li key={policy.version}>
-                v{policy.version} · {policy.gridSource} grid · {policy.pvSource}{" "}
-                solar · {policy.loadSource} load · {policy.batterySource}{" "}
-                battery · validated {policy.validated} · effective{" "}
-                {localInstant(policy.effectiveFrom)}
-              </li>
-            ))}
-          </ul>
+          policies.data.accountingPolicies.length === 0 ? (
+            <EmptyList>No accounting policies recorded.</EmptyList>
+          ) : (
+            <ul className={listClass}>
+              {policies.data.accountingPolicies.map((policy) => (
+                <li key={policy.version} className={itemClass}>
+                  v{policy.version} · {policy.gridSource} grid ·{" "}
+                  {policy.pvSource} solar · {policy.loadSource} load ·{" "}
+                  {policy.batterySource} battery · validated {policy.validated}{" "}
+                  · effective {localInstant(policy.effectiveFrom)}
+                </li>
+              ))}
+            </ul>
+          )
         ) : (
           <Message>{policies.error?.message ?? "Loading policies…"}</Message>
         )}
-      </div>
-      <div className="card">
-        <h3>Gaps &amp; events</h3>
-        <div className="form-row">
-          <label>
+      </Tile>
+      <Tile title="Gaps & events">
+        <div className="flex flex-wrap items-end gap-4">
+          <label className={fieldLabel}>
             From local day{" "}
-            <input
+            <Input
               type="date"
+              className="h-8 w-auto"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
             />
           </label>
-          <label>
+          <label className={fieldLabel}>
             Through local day{" "}
-            <input
+            <Input
               type="date"
+              className="h-8 w-auto"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
             />
@@ -217,22 +265,21 @@ export function DataQuality({
           !valid && <Message>End date must be on or after start date.</Message>
         )}
         {valid && <QualityEvents key={`${from}|${to}`} from={from} to={to} />}
-      </div>
-      <div className="card">
-        <h3>Daily comparison against inverter counters</h3>
+      </Tile>
+      <Tile title="Daily comparison against inverter counters">
         {totals.data ? (
-          <table>
+          <DataTable containerClassName="overflow-x-auto">
             <thead>
-              <tr>
-                <th>Local day</th>
-                <th>Quantity</th>
-                <th>Ours kWh</th>
-                <th>Inverter interval delta kWh (unvalidated)</th>
-                <th>
+              <Tr>
+                <Th>Local day</Th>
+                <Th>Quantity</Th>
+                <Th>Ours kWh</Th>
+                <Th>Inverter interval delta kWh (unvalidated)</Th>
+                <Th>
                   Inverter lifetime kWh (includes pre-monitoring, unvalidated)
-                </th>
-                <th>Inverter today kWh (VENDOR_SUMMARY)</th>
-              </tr>
+                </Th>
+                <Th>Inverter today kWh (VENDOR_SUMMARY)</Th>
+              </Tr>
             </thead>
             <tbody>
               {totals.data.energyTotals.rows.flatMap((row) =>
@@ -246,44 +293,54 @@ export function DataQuality({
                     "batteryDischarge",
                   ] as const
                 ).map((key) => (
-                  <tr key={`${row.periodStart}-${key}`}>
-                    <td>{row.periodStart}</td>
-                    <td>{key}</td>
-                    <td title={row[key].flags.join(", ") || row[key].status}>
-                      {decimal(row[key].kwh)}
-                    </td>
-                    <td
-                      title={numericReason(
-                        row.vendor.intervalDelta[key].kwh,
-                        null,
-                        "DEVICE_COUNTER: NEEDS_TWO_READINGS",
-                      )}
-                    >
-                      {decimal(row.vendor.intervalDelta[key].kwh)}
-                    </td>
-                    <td
-                      title={numericReason(
-                        row.vendor.lifetime[key].kwh,
-                        null,
-                        `${row.vendor.lifetime[key].provenance}: NO_READING`,
-                      )}
-                    >
-                      {decimal(row.vendor.lifetime[key].kwh)}
-                    </td>
-                    <td
-                      title={numericReason(
-                        row.vendor.vendorToday[key].kwh,
-                        null,
-                        "VENDOR_SUMMARY: NO_READING",
-                      )}
-                    >
-                      {decimal(row.vendor.vendorToday[key].kwh)}
-                    </td>
-                  </tr>
+                  <Tr key={`${row.periodStart}-${key}`}>
+                    <Td className="whitespace-nowrap">{row.periodStart}</Td>
+                    <Td>{key}</Td>
+                    <Td className="tabular-nums">
+                      <Reason
+                        reason={row[key].flags.join(", ") || row[key].status}
+                      >
+                        {decimal(row[key].kwh)}
+                      </Reason>
+                    </Td>
+                    <Td className="tabular-nums">
+                      <Reason
+                        reason={numericReason(
+                          row.vendor.intervalDelta[key].kwh,
+                          null,
+                          "DEVICE_COUNTER: NEEDS_TWO_READINGS",
+                        )}
+                      >
+                        {decimal(row.vendor.intervalDelta[key].kwh)}
+                      </Reason>
+                    </Td>
+                    <Td className="tabular-nums">
+                      <Reason
+                        reason={numericReason(
+                          row.vendor.lifetime[key].kwh,
+                          null,
+                          `${row.vendor.lifetime[key].provenance}: NO_READING`,
+                        )}
+                      >
+                        {decimal(row.vendor.lifetime[key].kwh)}
+                      </Reason>
+                    </Td>
+                    <Td className="tabular-nums">
+                      <Reason
+                        reason={numericReason(
+                          row.vendor.vendorToday[key].kwh,
+                          null,
+                          "VENDOR_SUMMARY: NO_READING",
+                        )}
+                      >
+                        {decimal(row.vendor.vendorToday[key].kwh)}
+                      </Reason>
+                    </Td>
+                  </Tr>
                 )),
               )}
             </tbody>
-          </table>
+          </DataTable>
         ) : (
           <Message>
             {siteTimezone
@@ -291,14 +348,14 @@ export function DataQuality({
               : "Loading site timezone…"}
           </Message>
         )}
-      </div>
-      <div className="card">
-        <h3>Reconciliation</h3>
+      </Tile>
+      <Tile title="Reconciliation">
         {readings.loaded ? (
-          <div className="form-row">
-            <label>
+          <div className="flex flex-wrap items-end gap-4">
+            <label className={fieldLabel}>
               From reading{" "}
-              <select
+              <NativeSelect
+                size="sm"
                 value={fromReading ?? ""}
                 onChange={(e) =>
                   setFromReading(e.target.value ? Number(e.target.value) : null)
@@ -310,11 +367,12 @@ export function DataQuality({
                     {localInstant(node.readAt)} · #{node.id}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
-            <label>
+            <label className={fieldLabel}>
               To reading{" "}
-              <select
+              <NativeSelect
+                size="sm"
                 value={toReading ?? ""}
                 onChange={(e) =>
                   setToReading(e.target.value ? Number(e.target.value) : null)
@@ -326,7 +384,7 @@ export function DataQuality({
                     {localInstant(node.readAt)} · #{node.id}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
           </div>
         ) : (
@@ -334,96 +392,114 @@ export function DataQuality({
             {readings.error?.message ?? "Loading meter readings…"}
           </Message>
         )}
-        {readings.loaded && <MeterReadingsPager pages={readings} />}
+        {readings.loaded && (
+          <div className="flex flex-col items-start gap-3">
+            <MeterReadingsPager pages={readings} />
+          </div>
+        )}
         {reconciliation.data ? (
           <>
-            <table>
+            <DataTable containerClassName="overflow-x-auto">
               <thead>
-                <tr>
-                  <th>Source</th>
-                  <th>Coverage</th>
-                  <th>Import ours / utility / ratio / verdict</th>
-                  <th>Export ours / utility / ratio / verdict</th>
-                </tr>
+                <Tr>
+                  <Th>Source</Th>
+                  <Th>Coverage</Th>
+                  <Th>Import ours / utility / ratio / verdict</Th>
+                  <Th>Export ours / utility / ratio / verdict</Th>
+                </Tr>
               </thead>
               <tbody>
                 {reconciliation.data.reconciliation.candidates.map(
                   (candidate) => (
-                    <tr key={candidate.source}>
-                      <td>{candidate.source}</td>
-                      <td title={candidate.coverage}>
-                        {coveragePercent(candidate.coverage)}
-                      </td>
-                      <td>
-                        <span
-                          title={numericReason(
+                    <Tr key={candidate.source}>
+                      <Td>{candidate.source}</Td>
+                      <Td>
+                        <Reason reason={candidate.coverage}>
+                          {coveragePercent(candidate.coverage)}
+                        </Reason>
+                      </Td>
+                      <Td className="tabular-nums">
+                        <Reason
+                          reason={numericReason(
                             candidate.import.oursKwh,
                             null,
                             candidate.import.verdict,
                           )}
                         >
                           {decimal(candidate.import.oursKwh)}
-                        </span>{" "}
+                        </Reason>{" "}
                         /{" "}
-                        <span
-                          title={numericReason(
+                        <Reason
+                          reason={numericReason(
                             candidate.import.utilityKwh,
                             null,
                             candidate.import.verdict,
                           )}
                         >
                           {decimal(candidate.import.utilityKwh)}
-                        </span>{" "}
+                        </Reason>{" "}
                         /{" "}
-                        <span
-                          title={numericReason(
+                        <Reason
+                          reason={numericReason(
                             candidate.import.ratio,
                             null,
                             candidate.import.verdict,
                           )}
                         >
                           {decimal(candidate.import.ratio)}
-                        </span>{" "}
-                        / {candidate.import.verdict}
-                      </td>
-                      <td>
-                        <span
-                          title={numericReason(
+                        </Reason>{" "}
+                        /{" "}
+                        <Badge
+                          variant="secondary"
+                          className={statusTone(candidate.import.verdict)}
+                        >
+                          {candidate.import.verdict}
+                        </Badge>
+                      </Td>
+                      <Td className="tabular-nums">
+                        <Reason
+                          reason={numericReason(
                             candidate.export.oursKwh,
                             null,
                             candidate.export.verdict,
                           )}
                         >
                           {decimal(candidate.export.oursKwh)}
-                        </span>{" "}
+                        </Reason>{" "}
                         /{" "}
-                        <span
-                          title={numericReason(
+                        <Reason
+                          reason={numericReason(
                             candidate.export.utilityKwh,
                             null,
                             candidate.export.verdict,
                           )}
                         >
                           {decimal(candidate.export.utilityKwh)}
-                        </span>{" "}
+                        </Reason>{" "}
                         /{" "}
-                        <span
-                          title={numericReason(
+                        <Reason
+                          reason={numericReason(
                             candidate.export.ratio,
                             null,
                             candidate.export.verdict,
                           )}
                         >
                           {decimal(candidate.export.ratio)}
-                        </span>{" "}
-                        / {candidate.export.verdict}
-                      </td>
-                    </tr>
+                        </Reason>{" "}
+                        /{" "}
+                        <Badge
+                          variant="secondary"
+                          className={statusTone(candidate.export.verdict)}
+                        >
+                          {candidate.export.verdict}
+                        </Badge>
+                      </Td>
+                    </Tr>
                   ),
                 )}
               </tbody>
-            </table>
-            <p>
+            </DataTable>
+            <p className="text-xs text-muted-foreground">
               Investigation:{" "}
               {reconciliation.data.reconciliation.investigationPath.join(
                 " → ",
@@ -439,22 +515,28 @@ export function DataQuality({
             </Message>
           )
         )}
-      </div>
-      <div className="card">
-        <h3>Calculation runs</h3>
+      </Tile>
+      <Tile title="Calculation runs">
         {runs.data ? (
           <>
-            <ul>
-              {runs.data.calculationRuns.edges.map(({ node }) => (
-                <li key={node.id}>
-                  #{node.id} · {node.kind} · {node.status} ·{" "}
-                  {localInstant(node.startedAt)} · {node.reason}{" "}
-                  {node.error && `· ${node.error}`}
-                </li>
-              ))}
-            </ul>
-            <button
+            {runs.data.calculationRuns.edges.length === 0 ? (
+              <EmptyList>No calculation runs yet.</EmptyList>
+            ) : (
+              <ul className={listClass}>
+                {runs.data.calculationRuns.edges.map(({ node }) => (
+                  <li key={node.id} className={itemClass}>
+                    #{node.id} · {node.kind} · {node.status} ·{" "}
+                    {localInstant(node.startedAt)} · {node.reason}{" "}
+                    {node.error && `· ${node.error}`}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
+              className="self-start"
               disabled={!runs.data.calculationRuns.pageInfo.hasNextPage}
               onClick={() =>
                 setRunCursor(
@@ -463,14 +545,14 @@ export function DataQuality({
               }
             >
               More runs
-            </button>
+            </Button>
           </>
         ) : (
           <Message>
             {runs.error?.message ?? "Loading calculation runs…"}
           </Message>
         )}
-      </div>
-    </section>
+      </Tile>
+    </PanelShell>
   );
 }

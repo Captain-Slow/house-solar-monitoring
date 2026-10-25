@@ -1,0 +1,279 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./sidebar.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@custom-variant motion-reduce {
+  @media (prefers-reduced-motion: reduce) {
+    @slot;
+  }
+  &:where([data-reduced-motion="true"] *) {
+    @slot;
+  }
+}
+
+/* Orientation variants used by the Separator primitive (from shadcn/tailwind.css, MIT). */
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
+
+@utility app-drag {
+  -webkit-app-region: drag;
+}
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-inset: var(--sidebar-inset);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-tab-background: var(--tab-background);
+  --font-heading: var(--app-font-sans);
+  --font-sans: var(--app-font-sans);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --app-font-sans:
+    "Google Sans Variable", "Google Sans", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Roboto, sans-serif, "Segoe UI Emoji",
+    "Apple Color Emoji", "Noto Color Emoji";
+  font-optical-sizing: auto;
+  --radius: 0.625rem;
+  --dashboard-tile-radius: 18px;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  /* Dashboard chart palette — dark mode overrides. */
+  --chart-1: 193 83% 55%;
+  --chart-2: 243 92% 72%;
+  --chart-3: 142 60% 50%;
+  --chart-4: 35 80% 60%;
+  --chart-5: 340 70% 60%;
+  --color-down-fill: oklch(0.62 0.13 218 / 0.18);
+  --color-up-fill: oklch(0.62 0.2 285 / 0.18);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-inset: oklch(0.145 0 0 / 0.65);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: rgb(255 255 255 / 6%);
+  --sidebar-active: rgb(255 255 255 / 14%);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --tab-background: oklch(0.269 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    @apply font-sans;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    background: #09090b;
+    color: var(--foreground);
+    font-family: var(--app-font-sans);
+  }
+}
+
+.dashboard-tile {
+  border-color: oklch(0 0 0 / 0.07);
+  border-radius: var(--dashboard-tile-radius);
+  background:
+    linear-gradient(180deg, oklch(1 0 0 / 0.98), oklch(1 0 0 / 0.93)),
+    var(--card);
+  /* box-shadow:
+    0 1px 1px oklch(1 0 0 / 0.72) inset,
+    0 1px 2px oklch(0 0 0 / 0.08),; */
+}
+
+.dark .dashboard-tile {
+  border-color: oklch(1 0 0 / 0.1);
+  background:
+    linear-gradient(180deg, oklch(0.24 0 0 / 0.95), oklch(0.2 0 0 / 0.9)),
+    var(--card);
+  /* box-shadow:
+    0 1px 1px oklch(1 0 0 / 0.08) inset,
+    0 1px 2px oklch(0 0 0 / 0.32),; */
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .dark .dashboard-tile {
+    background: var(--card);
+  }
+}
+
+.energy-flow {
+  width: 100%;
+}
+.flow-node circle {
+  fill: var(--card);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.flow-node text {
+  fill: var(--foreground);
+  font-size: 10px;
+  font-weight: 600;
+}
+.flow-edge line {
+  stroke: hsl(var(--chart-1));
+  stroke-width: 3;
+}
+.flow-edge text {
+  fill: var(--foreground);
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 3px;
+}
+.flow-strong line {
+  stroke-width: 6;
+}
+.flow-idle line {
+  stroke: var(--muted-foreground);
+  stroke-width: 2;
+  stroke-dasharray: 4 5;
+}
+.flow-live .flow-normal line,
+.flow-live .flow-strong line {
+  stroke-dasharray: 8 3;
+  animation: flow-dash 2s linear infinite;
+}
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-live .flow-normal line,
+  .flow-live .flow-strong line {
+    animation: none;
+  }
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--app-font-sans);
+}
+
+/* Keep animation completion events while removing visible motion. */
+/* biome-ignore-start lint/complexity/noImportantStyles: The accessibility preference overrides inline timings and animation utilities. */
+html[data-reduced-motion="true"],
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-delay: 0s !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-delay: 0s !important;
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+/* The OS preference removes dialog, tooltip and transition motion too, not only the flow lines. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0s !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0s !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: The accessibility preference overrides inline timings and animation utilities. */
+
+/* Slim dark scrollbars: the classic 15px Windows gutter would shrink the fixed 160px dashboard grid. */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgb(255 255 255 / 45%);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 65%);
+}
+@media (forced-colors: active) {
+  *::-webkit-scrollbar-thumb {
+    background: CanvasText;
+  }
+}

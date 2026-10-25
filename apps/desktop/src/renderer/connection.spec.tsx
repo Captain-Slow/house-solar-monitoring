@@ -41,10 +41,16 @@ const unavailable: QueryResult<unknown> = {
   error: { class: "NETWORK", message: "synthetic backend unreachable" },
 };
 
-async function openSettings(bridge: FakeBridge): Promise<void> {
+async function openTile(tile: RegExp): Promise<void> {
+  fireEvent.click(await screen.findByRole("button", { name: tile }));
+}
+
+/** Opens Settings and then the dialog the test needs ("Tariffs" or "Meter readings"). */
+async function openSettings(bridge: FakeBridge, tile: RegExp): Promise<void> {
   await screen.findByRole("navigation", { name: "Dashboard tabs" });
   act(() => bridge.emit({ kind: "CONNECTED", role: "VIEWER" }));
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await openTile(tile);
 }
 
 function tariffsShown(name: string): number {
@@ -74,7 +80,7 @@ describe("backend connection boundary", () => {
         screen
           .queryAllByText(/^#\d+ · .* · import /)
           .map((item) => Number(/^#(\d+)/.exec(item.textContent ?? "")?.[1]));
-      await openSettings(bridge);
+      await openSettings(bridge, /Meter readings/);
       await waitFor(() =>
         expect(listed()).toEqual(old.rows.slice(0, 50).map((row) => row.id)),
       );
@@ -93,6 +99,7 @@ describe("backend connection boundary", () => {
       act(() => bridge.emit({ kind: "NOT_CONFIGURED" }));
       backend = "B";
       act(() => bridge.emit({ kind: "CONNECTED", role: "VIEWER" }));
+      await openTile(/Meter readings/);
       await waitFor(() =>
         expect(listed()).toEqual(
           current.rows.slice(0, 50).map((row) => row.id),
@@ -146,7 +153,7 @@ describe("backend connection boundary", () => {
       return backend === "A" ? tariffs("Tariff of backend A") : unavailable;
     });
     renderWithClient(<App />);
-    await openSettings(bridge);
+    await openSettings(bridge, /Tariffs/);
     await waitFor(() =>
       expect(tariffsShown("Tariff of backend A")).toBeGreaterThan(0),
     );
@@ -155,6 +162,7 @@ describe("backend connection boundary", () => {
     act(() => bridge.emit({ kind: "NOT_CONFIGURED" }));
     backend = "B";
     act(() => bridge.emit({ kind: "CONNECTED", role: "VIEWER" }));
+    await openTile(/Tariffs/);
     await waitFor(() => expect(bridge.callsFor("Tariffs")).toHaveLength(2));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -174,12 +182,13 @@ describe("backend connection boundary", () => {
       return backend === "A" ? late.promise : tariffs("Tariff of backend B");
     });
     renderWithClient(<App />);
-    await openSettings(bridge);
+    await openSettings(bridge, /Tariffs/);
     await waitFor(() => expect(bridge.callsFor("Tariffs")).toHaveLength(1));
 
     act(() => bridge.emit({ kind: "NOT_CONFIGURED" }));
     backend = "B";
     act(() => bridge.emit({ kind: "CONNECTED", role: "VIEWER" }));
+    await openTile(/Tariffs/);
     await waitFor(() =>
       expect(tariffsShown("Tariff of backend B")).toBeGreaterThan(0),
     );
@@ -198,7 +207,7 @@ describe("backend connection boundary", () => {
       op === "Tariffs" ? tariffs("Tariff of backend A") : unavailable,
     );
     renderWithClient(<App />);
-    await openSettings(bridge);
+    await openSettings(bridge, /Tariffs/);
     await waitFor(() =>
       expect(tariffsShown("Tariff of backend A")).toBeGreaterThan(0),
     );

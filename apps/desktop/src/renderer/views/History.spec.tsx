@@ -18,6 +18,7 @@ vi.mock("../components/Chart", () => ({
       "aria-label": label,
       "data-option": JSON.stringify(option),
     }),
+  chartColor: () => "rgb(1, 2, 3)",
 }));
 
 afterEach(cleanup);

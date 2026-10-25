@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { PanelShell } from "../components/panel-shell";
 import type {
   EnergyTotalsQuery,
   PowerSeriesQuery,
@@ -6,8 +7,15 @@ import type {
 } from "@solar/contracts/generated/graphql";
 import type { EChartsCoreOption } from "echarts/core";
 import { useSolarQuery } from "../api";
-import { Chart } from "../components/Chart";
+import { Chart, chartColor } from "../components/Chart";
 import { Message } from "../components/Display";
+import { ToolbarGroup } from "../components/toolbar-group";
+import { DataTable, Td, Th, Tr } from "../components/ui/data-table";
+import { EmptyList } from "../components/ui/empty";
+import { Input } from "../components/ui/input";
+import { NativeSelect } from "../components/ui/native-select";
+import { Reason } from "../components/ui/reason";
+import { cn } from "../lib/utils";
 import {
   bucketLabel,
   coveragePercent,
@@ -21,11 +29,29 @@ import {
   type SocLine,
 } from "../models";
 
-const socColor: Record<SocLine["statistic"], string> = {
-  avg: "#8dd6ff",
-  min: "#9be28a",
-  max: "#ffda91",
+// Battery SOC lines take their colours from the chart palette tokens.
+const socToken: Record<SocLine["statistic"], string> = {
+  avg: "--chart-1",
+  min: "--chart-3",
+  max: "--chart-4",
 };
+
+// Controls inside a ToolbarGroup fill the pill's 30px interior, borderless like its icon buttons.
+const pillLabel =
+  "flex items-center gap-1.5 ps-2 text-xs text-muted-foreground";
+const pillField =
+  "h-[30px] rounded-full border-0 bg-transparent text-xs text-foreground shadow-none hover:bg-accent dark:bg-transparent";
+
+function Tile({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="dashboard-tile flex shrink-0 flex-col gap-3 border-none p-4 shadow-md/5">
+      <h3 className="text-[10px] leading-4 font-medium tracking-[0.04em] text-muted-foreground uppercase">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
 
 export function History({
   siteTimezone,
@@ -99,7 +125,7 @@ export function History({
               index === 0
                 ? {
                     silent: true,
-                    itemStyle: { color: "rgba(225, 110, 86, 0.16)" },
+                    itemStyle: { color: chartColor("--destructive", 0.16) },
                     data: gapAreas(power.gaps),
                   }
                 : undefined,
@@ -112,7 +138,7 @@ export function History({
   const socOption = useMemo<EChartsCoreOption>(
     () => ({
       tooltip: { trigger: "axis" },
-      legend: { show: true, top: 0, textStyle: { color: "#cfdfeb" } },
+      legend: { show: true, top: 0 },
       grid: { left: 55, right: 25, bottom: 35, top: 40 },
       xAxis: { type: "time" },
       yAxis: { type: "value", name: "%", min: 0, max: 100 },
@@ -121,11 +147,15 @@ export function History({
         type: "line",
         showSymbol: false,
         connectNulls: false,
-        itemStyle: { color: socColor[line.statistic] },
+        itemStyle: { color: chartColor(socToken[line.statistic]) },
         lineStyle:
           line.statistic === "avg"
-            ? { color: socColor.avg, width: 2 }
-            : { color: socColor[line.statistic], type: "dashed", width: 1.5 },
+            ? { color: chartColor(socToken.avg), width: 2 }
+            : {
+                color: chartColor(socToken[line.statistic]),
+                type: "dashed",
+                width: 1.5,
+              },
         data: line.data,
       })),
     }),
@@ -152,57 +182,66 @@ export function History({
     [energy],
   );
   return (
-    <section aria-labelledby="history-title">
-      <h2 id="history-title">History</h2>
-      <div className="form-row">
-        <label>
-          Range{" "}
-          <select
-            value={range}
-            onChange={(e) => setRange(e.target.value as RangeKind)}
-          >
-            {(["day", "week", "month", "year", "custom"] as const).map(
-              (option) => (
-                <option key={option}>{option}</option>
-              ),
-            )}
-          </select>
-        </label>
-        <label>
-          Grid window tariff{" "}
-          <select
-            value={tariffId}
-            onChange={(e) => setTariffId(e.target.value)}
-          >
-            <option value="">No window breakdown</option>
-            {tariffs.data?.tariffs.map((tariff) => (
-              <option key={tariff.id} value={tariff.id}>
-                {tariff.name} (#{tariff.id})
-              </option>
-            ))}
-          </select>
-        </label>
-        {range === "custom" && (
-          <>
-            <label>
-              From{" "}
-              <input
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-              />
-            </label>
-            <label>
-              Through{" "}
-              <input
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-              />
-            </label>
-          </>
-        )}
-      </div>
+    <PanelShell
+      title="History"
+      titleId="history-title"
+      contentClassName="gap-4"
+      actions={
+        <ToolbarGroup>
+          <label className={pillLabel}>
+            Range{" "}
+            <NativeSelect
+              className={cn(pillField, "ps-2 pe-7")}
+              value={range}
+              onChange={(e) => setRange(e.target.value as RangeKind)}
+            >
+              {(["day", "week", "month", "year", "custom"] as const).map(
+                (option) => (
+                  <option key={option}>{option}</option>
+                ),
+              )}
+            </NativeSelect>
+          </label>
+          <label className={pillLabel}>
+            Grid window tariff{" "}
+            <NativeSelect
+              className={cn(pillField, "max-w-40 truncate ps-2 pe-7")}
+              value={tariffId}
+              onChange={(e) => setTariffId(e.target.value)}
+            >
+              <option value="">No window breakdown</option>
+              {tariffs.data?.tariffs.map((tariff) => (
+                <option key={tariff.id} value={tariff.id}>
+                  {tariff.name} (#{tariff.id})
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+        </ToolbarGroup>
+      }
+    >
+      {range === "custom" && (
+        <ToolbarGroup className="self-end">
+          <label className={pillLabel}>
+            From{" "}
+            <Input
+              type="date"
+              className={cn(pillField, "w-auto px-2 md:text-xs")}
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+            />
+          </label>
+          <label className={pillLabel}>
+            Through{" "}
+            <Input
+              type="date"
+              className={cn(pillField, "w-auto px-2 md:text-xs")}
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+            />
+          </label>
+        </ToolbarGroup>
+      )}
       {tariffs.error && <Message>{tariffs.error.message}</Message>}
       {!siteTimezone ? (
         <Message>Loading site timezone…</Message>
@@ -213,8 +252,7 @@ export function History({
       )}
       {valid && (
         <>
-          <div className="card">
-            <h3>Power · gaps shaded</h3>
+          <Tile title="Power · gaps shaded">
             {power ? (
               <Chart
                 option={chartOption}
@@ -225,69 +263,71 @@ export function History({
                 {series.error?.message ?? "Loading power series…"}
               </Message>
             )}
-          </div>
-          <div className="card">
-            <h3>
-              Energy by {dates.granularity.toLowerCase()} · {dates.fromDate} to{" "}
-              {dates.toDate}
-            </h3>
+          </Tile>
+          <Tile
+            title={`Energy by ${dates.granularity.toLowerCase()} · ${dates.fromDate} to ${dates.toDate}`}
+          >
             {energy ? (
               <>
                 <Chart
                   option={bars}
                   label="Solar, consumption, import and export energy bars"
                 />
-                <p className="meta">
+                <p className="text-xs text-muted-foreground">
                   Coverage:{" "}
-                  <span title={energy.total.solar.coverage}>
+                  <Reason reason={energy.total.solar.coverage}>
                     {coveragePercent(energy.total.solar.coverage)}
-                  </span>{" "}
+                  </Reason>{" "}
                   solar ·{" "}
-                  <span title={energy.total.gridImport.coverage}>
+                  <Reason reason={energy.total.gridImport.coverage}>
                     {coveragePercent(energy.total.gridImport.coverage)}
-                  </span>{" "}
+                  </Reason>{" "}
                   grid import
                 </p>
                 {tariffId && (
-                  <table>
-                    <caption>
+                  <DataTable containerClassName="overflow-x-auto">
+                    <caption className="sr-only">
                       Grid energy by selected tariff window (tariff local time)
                     </caption>
                     <thead>
-                      <tr>
-                        <th>Window</th>
-                        <th>Import kWh</th>
-                        <th>Export kWh</th>
-                      </tr>
+                      <Tr>
+                        <Th>Window</Th>
+                        <Th>Import kWh</Th>
+                        <Th>Export kWh</Th>
+                      </Tr>
                     </thead>
                     <tbody>
                       {energy.total.gridByWindow.map((window) => (
-                        <tr key={window.window}>
-                          <td>{window.window}</td>
-                          <td
-                            title={[
-                              window.importKwh.status,
-                              ...window.importKwh.flags,
-                            ].join(", ")}
-                          >
-                            {decimal(window.importKwh.kwh)} ·{" "}
-                            {coveragePercent(window.importKwh.coverage)}{" "}
-                            coverage
-                          </td>
-                          <td
-                            title={[
-                              window.exportKwh.status,
-                              ...window.exportKwh.flags,
-                            ].join(", ")}
-                          >
-                            {decimal(window.exportKwh.kwh)} ·{" "}
-                            {coveragePercent(window.exportKwh.coverage)}{" "}
-                            coverage
-                          </td>
-                        </tr>
+                        <Tr key={window.window}>
+                          <Td>{window.window}</Td>
+                          <Td>
+                            <Reason
+                              reason={[
+                                window.importKwh.status,
+                                ...window.importKwh.flags,
+                              ].join(", ")}
+                            >
+                              {decimal(window.importKwh.kwh)} ·{" "}
+                              {coveragePercent(window.importKwh.coverage)}{" "}
+                              coverage
+                            </Reason>
+                          </Td>
+                          <Td>
+                            <Reason
+                              reason={[
+                                window.exportKwh.status,
+                                ...window.exportKwh.flags,
+                              ].join(", ")}
+                            >
+                              {decimal(window.exportKwh.kwh)} ·{" "}
+                              {coveragePercent(window.exportKwh.coverage)}{" "}
+                              coverage
+                            </Reason>
+                          </Td>
+                        </Tr>
                       ))}
                     </tbody>
-                  </table>
+                  </DataTable>
                 )}
               </>
             ) : (
@@ -295,29 +335,32 @@ export function History({
                 {totals.error?.message ?? "Loading energy totals…"}
               </Message>
             )}
-          </div>
-          <div className="card">
-            <h3>Battery SOC</h3>
+          </Tile>
+          <Tile title="Battery SOC">
             {power ? (
               <>
                 <Chart
                   option={socOption}
                   label="Battery SOC history; missing intervals are gaps"
                 />
-                <p className="meta">
-                  {soc.length === 0
-                    ? "No SOC values were recorded in this range."
-                    : soc.some((line) => line.statistic === "avg")
+                {soc.length === 0 ? (
+                  <EmptyList>
+                    No SOC values were recorded in this range.
+                  </EmptyList>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {soc.some((line) => line.statistic === "avg")
                       ? `Average, minimum and maximum SOC over each ${bucketLabel(power.bucketSeconds)} interval; a line breaks where no value was recorded.`
                       : `Average SOC is not available at this resolution; showing the minimum and maximum within each ${bucketLabel(power.bucketSeconds)} interval.`}
-                </p>
+                  </p>
+                )}
               </>
             ) : (
               <Message>Loading SOC…</Message>
             )}
-          </div>
+          </Tile>
         </>
       )}
-    </section>
+    </PanelShell>
   );
 }

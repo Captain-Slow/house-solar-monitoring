@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { PanelShell } from "../components/panel-shell";
+import { ToolbarGroup } from "../components/toolbar-group";
 import type {
   BillingPeriodQuery,
   BillingPeriodsQuery,
@@ -7,6 +9,15 @@ import type {
 } from "@solar/contracts/generated/graphql";
 import { useSolarQuery } from "../api";
 import { Metric, Message } from "../components/Display";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { DataTable, Td, Th, Tr } from "../components/ui/data-table";
+import { EmptyList } from "../components/ui/empty";
+import { Input } from "../components/ui/input";
+import { NativeSelect } from "../components/ui/native-select";
+import { Reason } from "../components/ui/reason";
+import { statusTone } from "../components/ui/status-tone";
+import { cn } from "../lib/utils";
 import {
   billingEstimate,
   coveragePercent,
@@ -24,39 +35,72 @@ type BillingResult = NonNullable<
   NonNullable<BillingPeriodQuery["billingPeriod"]>["result"]
 >;
 
+// Controls inside a ToolbarGroup fill the pill's 30px interior, borderless like its icon buttons.
+const pillLabel =
+  "flex items-center gap-1.5 ps-3 text-xs text-muted-foreground";
+const pillField =
+  "h-[30px] rounded-full border-0 bg-transparent text-xs text-foreground shadow-none hover:bg-accent dark:bg-transparent";
+
+function Tile({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="dashboard-tile flex shrink-0 flex-col gap-3 border-none p-4 shadow-md/5">
+      <h3 className="text-[10px] leading-4 font-medium tracking-[0.04em] text-muted-foreground uppercase">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
 export function BillingLineItems({ result }: { result: BillingResult }) {
   return (
-    <table>
-      <caption>Billing line items</caption>
+    <DataTable containerClassName="overflow-x-auto">
+      <caption className="sr-only">Billing line items</caption>
       <thead>
-        <tr>
-          <th>Item</th>
-          <th>Quantity kWh</th>
-          <th>Rate</th>
-          <th>Amount</th>
-          <th>Status</th>
-        </tr>
+        <Tr>
+          <Th>Item</Th>
+          <Th>Quantity kWh</Th>
+          <Th>Rate</Th>
+          <Th>Amount</Th>
+          <Th>Status</Th>
+        </Tr>
       </thead>
       <tbody>
         {result.lineItems.map((line, index) => (
-          <tr key={`${line.code}-${line.segment}-${index}`}>
-            <td title={line.note ?? undefined}>{line.label}</td>
-            <td
-              title={lineItemMissingReason(line, "quantityKwh", result.reasons)}
-            >
-              {decimal(line.quantityKwh)}
-            </td>
-            <td title={lineItemMissingReason(line, "rate", result.reasons)}>
-              {decimal(line.rate)}
-            </td>
-            <td title={lineItemMissingReason(line, "amount", result.reasons)}>
-              {decimal(line.amount)}
-            </td>
-            <td>{line.status}</td>
-          </tr>
+          <Tr key={`${line.code}-${line.segment}-${index}`}>
+            <Td>
+              <Reason reason={line.note}>{line.label}</Reason>
+            </Td>
+            <Td className="tabular-nums">
+              <Reason
+                reason={lineItemMissingReason(
+                  line,
+                  "quantityKwh",
+                  result.reasons,
+                )}
+              >
+                {decimal(line.quantityKwh)}
+              </Reason>
+            </Td>
+            <Td className="tabular-nums">
+              <Reason
+                reason={lineItemMissingReason(line, "rate", result.reasons)}
+              >
+                {decimal(line.rate)}
+              </Reason>
+            </Td>
+            <Td className="tabular-nums">
+              <Reason
+                reason={lineItemMissingReason(line, "amount", result.reasons)}
+              >
+                {decimal(line.amount)}
+              </Reason>
+            </Td>
+            <Td>{line.status}</Td>
+          </Tr>
         ))}
       </tbody>
-    </table>
+    </DataTable>
   );
 }
 export function UsageCost({
@@ -108,47 +152,55 @@ export function UsageCost({
   );
   const total = totals.data?.energyTotals.total;
   return (
-    <section aria-labelledby="cost-title">
-      <h2 id="cost-title">Usage &amp; Cost</h2>
-      <p className="caption">
+    <PanelShell
+      title="Usage & Cost"
+      titleId="cost-title"
+      contentClassName="gap-4"
+      actions={
+        <ToolbarGroup>
+          <label className={pillLabel}>
+            Range{" "}
+            <NativeSelect
+              className={cn(pillField, "ps-2 pe-7")}
+              value={range}
+              onChange={(e) => setRange(e.target.value as RangeKind)}
+            >
+              {(["day", "week", "month", "year", "custom"] as const).map(
+                (option) => (
+                  <option key={option}>{option}</option>
+                ),
+              )}
+            </NativeSelect>
+          </label>
+        </ToolbarGroup>
+      }
+    >
+      <p className="text-sm font-medium text-foreground">
         Calculated from measured grid import/export under your configured
         tariff; not your TNB bill.
       </p>
-      <div className="form-row">
-        <label>
-          Range{" "}
-          <select
-            value={range}
-            onChange={(e) => setRange(e.target.value as RangeKind)}
-          >
-            {(["day", "week", "month", "year", "custom"] as const).map(
-              (option) => (
-                <option key={option}>{option}</option>
-              ),
-            )}
-          </select>
-        </label>
-        {range === "custom" && (
-          <>
-            <label>
-              From{" "}
-              <input
-                type="date"
-                value={customFrom}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-            </label>
-            <label>
-              Through{" "}
-              <input
-                type="date"
-                value={customTo}
-                onChange={(e) => setTo(e.target.value)}
-              />
-            </label>
-          </>
-        )}
-      </div>
+      {range === "custom" && (
+        <ToolbarGroup className="self-end">
+          <label className={pillLabel}>
+            From{" "}
+            <Input
+              type="date"
+              className={cn(pillField, "w-auto px-2 md:text-xs")}
+              value={customFrom}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </label>
+          <label className={pillLabel}>
+            Through{" "}
+            <Input
+              type="date"
+              className={cn(pillField, "w-auto px-2 md:text-xs")}
+              value={customTo}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </label>
+        </ToolbarGroup>
+      )}
       {!siteTimezone ? (
         <Message>Loading site timezone…</Message>
       ) : (
@@ -156,7 +208,7 @@ export function UsageCost({
           <Message>Through date must be on or after start date.</Message>
         )
       )}
-      <p className="meta">
+      <p className="text-xs text-muted-foreground">
         Monitoring since{" "}
         {localInstant(
           totals.data?.energyTotals.monitoringSince ??
@@ -167,7 +219,7 @@ export function UsageCost({
       </p>
       {valid &&
         (total ? (
-          <dl className="metrics">
+          <dl className="grid shrink-0 grid-cols-2 gap-4">
             {(
               [
                 ["Solar", total.solar],
@@ -186,11 +238,11 @@ export function UsageCost({
                   text={shown.text}
                   reason={shown.reason}
                   detail={
-                    <span className="badge">
+                    <span className="text-xs text-muted-foreground">
                       {value.provenance} · coverage{" "}
-                      <span title={value.coverage}>
+                      <Reason reason={value.coverage}>
                         {coveragePercent(value.coverage)}
-                      </span>{" "}
+                      </Reason>{" "}
                       · {value.status}
                     </span>
                   }
@@ -201,67 +253,99 @@ export function UsageCost({
         ) : (
           <Message>{totals.error?.message ?? "Loading energy totals…"}</Message>
         ))}
-      <h3>Billing periods</h3>
-      {periods.data ? (
-        <>
-          <ul className="period-list">
-            {periods.data.billingPeriods.edges.map(({ node }) => {
-              const result = node.result;
-              const estimate = result
-                ? billingEstimate(result, result.nem != null)
-                : null;
-              return (
-                <li key={node.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(node.id)}
-                    aria-pressed={selected === node.id}
-                  >
-                    {node.startDate} – {node.endDate} ·{" "}
-                    {result?.status ?? "Not calculated"} · {estimate?.marker}
-                    <span
-                      title={numericReason(
-                        result?.total,
-                        result?.reasons.join(", "),
-                        result?.status ?? "Not calculated",
+      <Tile title="Billing periods">
+        {periods.data ? (
+          <>
+            {periods.data.billingPeriods.edges.length === 0 ? (
+              <EmptyList>No billing periods yet.</EmptyList>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {periods.data.billingPeriods.edges.map(({ node }) => {
+                  const result = node.result;
+                  const estimate = result
+                    ? billingEstimate(result, result.nem != null)
+                    : null;
+                  const status = result?.status ?? "Not calculated";
+                  const pressed = selected === node.id;
+                  return (
+                    <li key={node.id} className="flex flex-col gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto w-full justify-start rounded-md border px-3 py-2 text-start text-xs font-normal whitespace-normal data-[pressed=true]:bg-accent"
+                        onClick={() => setSelected(node.id)}
+                        aria-pressed={pressed}
+                        data-pressed={pressed}
+                      >
+                        <span className="min-w-0 flex-1 leading-5">
+                          {node.startDate} – {node.endDate} ·{" "}
+                          <Badge
+                            variant="secondary"
+                            className={statusTone(status)}
+                          >
+                            {status}
+                          </Badge>{" "}
+                          · {estimate?.marker}
+                          <Reason
+                            focusable={false}
+                            reason={numericReason(
+                              result?.total,
+                              result?.reasons.join(", "),
+                              status,
+                            )}
+                          >
+                            {decimal(result?.total)}
+                          </Reason>{" "}
+                          {result && (
+                            <Reason focusable={false} reason={result.coverage}>
+                              (coverage {coveragePercent(result.coverage)})
+                            </Reason>
+                          )}
+                        </span>
+                      </Button>
+                      {(estimate?.explanation || node.stale) && (
+                        <div className="flex flex-wrap items-center gap-2 px-1">
+                          {estimate?.explanation && (
+                            <span className="text-xs text-chart-4">
+                              {estimate.explanation}
+                            </span>
+                          )}
+                          {node.stale && (
+                            <Badge variant="secondary">
+                              Recalculation pending
+                            </Badge>
+                          )}
+                        </div>
                       )}
-                    >
-                      {decimal(result?.total)}
-                    </span>{" "}
-                    {result && (
-                      <span title={result.coverage}>
-                        (coverage {coveragePercent(result.coverage)})
-                      </span>
-                    )}
-                  </button>
-                  {estimate?.explanation && (
-                    <span className="estimate">{estimate.explanation}</span>
-                  )}
-                  {node.stale && (
-                    <span className="badge">Recalculation pending</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          <button
-            type="button"
-            disabled={!periods.data.billingPeriods.pageInfo.hasNextPage}
-            onClick={() =>
-              setCursor(periods.data.billingPeriods.pageInfo.endCursor ?? null)
-            }
-          >
-            More periods
-          </button>
-        </>
-      ) : (
-        <Message>
-          {periods.error?.message ?? "Loading billing periods…"}
-        </Message>
-      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="self-start"
+              disabled={!periods.data.billingPeriods.pageInfo.hasNextPage}
+              onClick={() =>
+                setCursor(
+                  periods.data.billingPeriods.pageInfo.endCursor ?? null,
+                )
+              }
+            >
+              More periods
+            </Button>
+          </>
+        ) : (
+          <Message>
+            {periods.error?.message ?? "Loading billing periods…"}
+          </Message>
+        )}
+      </Tile>
       {selected != null && (
-        <div className="card">
-          <h3>Period detail</h3>
+        <Tile title="Period detail">
           {detail.data?.billingPeriod ? (
             (() => {
               const period = detail.data.billingPeriod;
@@ -269,53 +353,63 @@ export function UsageCost({
               const estimate = result
                 ? billingEstimate(result, result.nem != null)
                 : null;
+              const status = result?.status ?? "Not calculated";
               return (
                 <>
-                  <p>
-                    {period.startDate} – {period.endDate} ·{" "}
-                    {result?.status ?? "Not calculated"} · coverage{" "}
-                    <span title={result?.coverage ?? undefined}>
-                      {coveragePercent(result?.coverage)}
-                    </span>
-                  </p>
-                  <p>
-                    Subtotal:{" "}
-                    <span
-                      title={numericReason(
-                        result?.subtotal,
-                        result?.reasons.join(", "),
-                        result?.status ?? "Not calculated",
-                      )}
-                    >
-                      {decimal(result?.subtotal)}
-                    </span>{" "}
-                    · Total: {estimate?.marker}
-                    <span
-                      title={numericReason(
-                        result?.total,
-                        result?.reasons.join(", "),
-                        result?.status ?? "Not calculated",
-                      )}
-                    >
-                      {decimal(result?.total)}
-                    </span>
-                  </p>
-                  {estimate?.explanation && (
-                    <p className="estimate">{estimate.explanation}</p>
-                  )}
+                  <div className="flex flex-col gap-1 text-sm">
+                    <p>
+                      {period.startDate} – {period.endDate} ·{" "}
+                      <Badge variant="secondary" className={statusTone(status)}>
+                        {status}
+                      </Badge>{" "}
+                      · coverage{" "}
+                      <Reason reason={result?.coverage}>
+                        {coveragePercent(result?.coverage)}
+                      </Reason>
+                    </p>
+                    <p>
+                      Subtotal:{" "}
+                      <Reason
+                        reason={numericReason(
+                          result?.subtotal,
+                          result?.reasons.join(", "),
+                          status,
+                        )}
+                      >
+                        {decimal(result?.subtotal)}
+                      </Reason>{" "}
+                      · Total: {estimate?.marker}
+                      <Reason
+                        reason={numericReason(
+                          result?.total,
+                          result?.reasons.join(", "),
+                          status,
+                        )}
+                      >
+                        {decimal(result?.total)}
+                      </Reason>
+                    </p>
+                    {estimate?.explanation && (
+                      <p className="text-xs text-chart-4">
+                        {estimate.explanation}
+                      </p>
+                    )}
+                    {result && (
+                      <p>Reasons: {result.reasons.join(", ") || "None"}</p>
+                    )}
+                  </div>
                   {result && (
                     <>
-                      <p>Reasons: {result.reasons.join(", ") || "None"}</p>
                       <BillingLineItems result={result} />
                       {result.nem && (
-                        <table>
-                          <caption>NEM credit lots</caption>
+                        <DataTable containerClassName="overflow-x-auto">
+                          <caption className="sr-only">NEM credit lots</caption>
                           <thead>
-                            <tr>
-                              <th>Type</th>
-                              <th>Origin local day</th>
-                              <th>Remaining kWh</th>
-                            </tr>
+                            <Tr>
+                              <Th>Type</Th>
+                              <Th>Origin local day</Th>
+                              <Th>Remaining kWh</Th>
+                            </Tr>
                           </thead>
                           <tbody>
                             {(
@@ -326,15 +420,17 @@ export function UsageCost({
                               ] as const
                             ).flatMap((kind) =>
                               result.nem![kind].map((lot, index) => (
-                                <tr key={`${kind}-${index}`}>
-                                  <td>{kind}</td>
-                                  <td>{lot.originStart}</td>
-                                  <td>{decimal(lot.kwh)}</td>
-                                </tr>
+                                <Tr key={`${kind}-${index}`}>
+                                  <Td>{kind}</Td>
+                                  <Td>{lot.originStart}</Td>
+                                  <Td className="tabular-nums">
+                                    {decimal(lot.kwh)}
+                                  </Td>
+                                </Tr>
                               )),
                             )}
                           </tbody>
-                        </table>
+                        </DataTable>
                       )}
                     </>
                   )}
@@ -344,8 +440,8 @@ export function UsageCost({
           ) : (
             <Message>{detail.error?.message ?? "Loading period…"}</Message>
           )}
-        </div>
+        </Tile>
       )}
-    </section>
+    </PanelShell>
   );
 }

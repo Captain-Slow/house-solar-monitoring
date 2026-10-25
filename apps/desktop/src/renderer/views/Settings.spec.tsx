@@ -1,37 +1,77 @@
-import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { Settings } from "./Settings";
+import { installBridge, renderWithClient } from "../test-support";
 
-function settingsMarkup(role: "ADMIN" | "VIEWER" | "UNKNOWN"): string {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return renderToStaticMarkup(
-    <QueryClientProvider client={client}>
-      <Settings role={role} onReset={() => {}} />
-    </QueryClientProvider>,
-  );
+afterEach(cleanup);
+
+function renderSettings(role: "ADMIN" | "VIEWER" | "UNKNOWN"): void {
+  installBridge(() => ({
+    ok: false,
+    error: { class: "NETWORK", message: "not needed by this test" },
+  }));
+  renderWithClient(<Settings role={role} onReset={() => {}} />);
+}
+
+async function openTile(tile: RegExp): Promise<void> {
+  fireEvent.click(await screen.findByRole("button", { name: tile }));
+  await screen.findByRole("dialog");
+}
+
+function shown(text: string | RegExp): boolean {
+  return screen.queryAllByText(text).length > 0;
 }
 
 describe("Settings mutation visibility", () => {
-  it("hides every mutating tariff, holiday, rate, reading and policy form for VIEWER", () => {
-    const html = settingsMarkup("VIEWER");
-    expect(html).toContain("VIEWER access");
-    expect(html).toContain("Tariff holidays");
-    expect(html).not.toContain("TNB RP4 ToU + NEM template");
-    expect(html).not.toContain("Save meter reading");
-    expect(html).not.toContain("Delete exclusion");
+  it("hides every mutating tariff, holiday, rate, reading and exclusion form for VIEWER", async () => {
+    renderSettings("VIEWER");
+    expect(shown(/VIEWER access/)).toBe(true);
+    await openTile(/Tariffs/);
+    expect(shown("Tariff holidays & monthly rates")).toBe(true);
+    expect(shown("TNB RP4 ToU + NEM template")).toBe(false);
+    expect(shown("Create tariff")).toBe(false);
   });
-  it("does not unlock mutations for UNKNOWN role", () => {
-    const html = settingsMarkup("UNKNOWN");
-    expect(html).toContain("Role could not be verified");
-    expect(html).not.toContain("Create tariff");
+  it.each([
+    [/Meter readings/, "Save meter reading"],
+    [/Exclusions/, "Delete exclusion"],
+  ] as const)("hides %s mutations for VIEWER", async (tile, mutation) => {
+    renderSettings("VIEWER");
+    await openTile(tile);
+    expect(shown(mutation)).toBe(false);
   });
-  it("shows the real tariff editor and configured mutations for ADMIN", () => {
-    const html = settingsMarkup("ADMIN");
-    expect(html).toContain("TNB RP4 ToU + NEM template");
-    expect(html).toContain("Save meter reading");
-    expect(html).toContain("Delete exclusion");
+  it("does not unlock mutations for UNKNOWN role", async () => {
+    renderSettings("UNKNOWN");
+    expect(shown(/Role could not be verified/)).toBe(true);
+    await openTile(/Tariffs/);
+    expect(shown("Create tariff")).toBe(false);
+  });
+  it.each([
+    [/Tariffs/, "TNB RP4 ToU + NEM template"],
+    [/Meter readings/, "Save meter reading"],
+    [/Exclusions/, "Delete exclusion"],
+  ] as const)(
+    "shows the real %s mutations for ADMIN",
+    async (tile, mutation) => {
+      renderSettings("ADMIN");
+      await openTile(tile);
+      expect(shown(mutation)).toBe(true);
+    },
+  );
+  it("keeps an unsaved editor draft when its dialog is closed and reopened", async () => {
+    renderSettings("ADMIN");
+    await openTile(/Meter readings/);
+    const editor = (await screen.findByLabelText(
+      /^Meter reading JSON/,
+    )) as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: '{"note":"unsaved draft"}' } });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await openTile(/Meter readings/);
+    expect(
+      (await screen.findByLabelText(
+        /^Meter reading JSON/,
+      )) as HTMLTextAreaElement,
+    ).toHaveProperty("value", '{"note":"unsaved draft"}');
   });
 });

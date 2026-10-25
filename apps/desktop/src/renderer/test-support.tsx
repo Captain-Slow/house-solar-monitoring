@@ -49,6 +49,15 @@ export function installBridge(
       saveToken: () => Promise.resolve({ ok: true }),
       clear: () => Promise.resolve(),
     },
+    window: {
+      minimize: () => Promise.resolve(),
+      toggleMaximize: () => Promise.resolve(),
+      close: () => Promise.resolve(),
+      onMaximizedChanged(callback) {
+        callback(false);
+        return () => undefined;
+      },
+    },
     onConnectionState(callback) {
       subscribers.add(callback);
       if (current) callback(current);

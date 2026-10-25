@@ -1,8 +1,8 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, nativeTheme } from "electron";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ApiClient } from "./api-client.js";
-import { broadcastConnection, registerIpc } from "./ipc.js";
+import { bindWindowState, broadcastConnection, registerIpc } from "./ipc.js";
 import {
   installRendererSecurity,
   rendererWebPreferences,
@@ -16,10 +16,12 @@ const output = resolve(fileURLToPath(import.meta.url), "..", "..");
 
 async function createWindow(client: ApiClient): Promise<void> {
   const window = new BrowserWindow({
-    width: 1280,
-    height: 850,
-    minWidth: 900,
-    minHeight: 650,
+    width: 914,
+    height: 672,
+    minWidth: 914,
+    minHeight: 672,
+    titleBarStyle: "hidden",
+    backgroundColor: "#09090b",
     show: false,
     webPreferences: {
       ...rendererWebPreferences,
@@ -27,6 +29,9 @@ async function createWindow(client: ApiClient): Promise<void> {
       devTools: !app.isPackaged,
     },
   });
+  window.setAutoHideMenuBar(false);
+  window.setMenuBarVisibility(false);
+  bindWindowState(window);
   secureWindow(window, devUrl);
   window.once("ready-to-show", () => window.show());
   window.webContents.on("did-finish-load", () =>
@@ -34,6 +39,8 @@ async function createWindow(client: ApiClient): Promise<void> {
   );
   await window.loadURL(devUrl ?? "app://renderer/");
 }
+
+nativeTheme.themeSource = "dark";
 
 void app.whenReady().then(async () => {
   installRendererSecurity(resolve(output, "renderer"), devUrl);

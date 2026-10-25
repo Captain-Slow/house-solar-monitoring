@@ -46,6 +46,12 @@ export interface SolarBridge {
     clear(): Promise<void>;
   };
   onConnectionState(cb: (s: ConnectionState) => void): () => void;
+  window: {
+    minimize(): Promise<void>;
+    toggleMaximize(): Promise<void>;
+    close(): Promise<void>;
+    onMaximizedChanged(cb: (maximized: boolean) => void): () => void;
+  };
 }
 
 declare global {

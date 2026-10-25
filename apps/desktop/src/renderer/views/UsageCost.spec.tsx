@@ -1,9 +1,16 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BillingPeriodQuery } from "@solar/contracts/generated/graphql";
 import { solarQueryKey } from "../api";
 import { BillingLineItems, UsageCost } from "./UsageCost";
+
+function parse(html: string): HTMLElement {
+  const root = document.createElement("div");
+  root.innerHTML = html;
+  return root;
+}
 
 describe("Usage & Cost numeric reasons", () => {
   it("renders an unavailable total with its billing reason tooltip and preserves zero coverage", () => {
@@ -40,8 +47,8 @@ describe("Usage & Cost numeric reasons", () => {
         <UsageCost siteTimezone="Asia/Kuala_Lumpur" />
       </QueryClientProvider>,
     );
-    expect(html).toContain('title="MISSING_GRID_DATA"');
-    expect(html).toContain('title="0"');
+    expect(html).toContain('data-reason="MISSING_GRID_DATA"');
+    expect(html).toContain('data-reason="0"');
     expect(html).toContain("coverage 0 %");
   });
   it("explains missing monthly AFA rates instead of using the billing month as the reason", () => {
@@ -71,9 +78,12 @@ describe("Usage & Cost numeric reasons", () => {
     >;
     const html = renderToStaticMarkup(<BillingLineItems result={result} />);
     expect(html).toContain(
-      'title="MONTHLY_RATE_MISSING:AFA · billing month 2026-10"',
+      'data-reason="MONTHLY_RATE_MISSING:AFA · billing month 2026-10"',
     );
-    expect(html).not.toContain('title="2026-10">—');
+    // The billing month ("2026-10") is the line's note, never the reason an em-dash value is missing.
+    const dom = parse(html);
+    for (const cell of dom.querySelectorAll('[data-reason="2026-10"]'))
+      expect(cell.textContent).not.toBe("—");
   });
   it("marks fixed-charge quantity null as not applicable rather than OK", () => {
     const result = {
@@ -101,7 +111,9 @@ describe("Usage & Cost numeric reasons", () => {
       NonNullable<BillingPeriodQuery["billingPeriod"]>["result"]
     >;
     const html = renderToStaticMarkup(<BillingLineItems result={result} />);
-    expect(html).toContain('title="Not applicable">—</td>');
-    expect(html).not.toContain('title="OK">—</td>');
+    expect(
+      parse(html).querySelector('[data-reason="Not applicable"]')?.textContent,
+    ).toBe("—");
+    expect(html).not.toContain('data-reason="OK"');
   });
 });
