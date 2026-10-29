@@ -54,7 +54,7 @@ New findings in this revision: F-028 to F-033 (Section 7).
 - **Viewport:** solar 914×672, DPR 1 (full-page shots 1280×850). Dark only; light theme is not scored (F-027).
 - **Native chrome (S13):** launched with an isolated `--user-data-dir` (first-run screen shown, so no user backend was contacted); the CDP listener owner was verified as the launched PID. The OS-level window capture failed (`MainWindowHandle` 0), so P0 uses a CDP renderer screenshot (`solar-S13-native-renderer.webp`) plus measured geometry: outer 1280×850, inner 1264×785, **65px vertical and 16px horizontal frame** (`measure/solar-native.json`).
 - **Not measurable from stills:** hover, pressed and focus states, tooltips, motion, the caption buttons' hit area and the 40px drag strip (both transparent), and the stale/reconnect banner (not on screen in any capture). Solar's hover/focus on `main button` and `main tr` in S1 are also `null` (`solar-interactions.json`). D9 and the focus part of D11 therefore compare DOM records with Motrix source, as in the first audit.
-- **Google Sans width check:** at Motrix's sizes and weights, Google Sans 5.3.2 sets 0–6% narrower than Inter for the 10 strings measured (mean 0.965, `measure/font-width-ratio.json`). Those strings wrap no earlier than in Motrix; the plan's Step 11D still checks every view for overflow at 914px.
+- **Google Sans width check:** at Motrix's sizes and weights, Google Sans 5.3.2 sets 0–6% narrower than Inter for the 10 strings measured (mean 0.965, `measure/font-width-ratio.json`). Those strings wrap no earlier than in Motrix; the superseded plan's Step 11D set a target of checking every view for overflow at 914px (a historical target); future compact-overflow verification belongs to `SOLAR_UI_REDESIGN_PLAN.md` (A6, A15 and its Verification section).
 
 ## 3. Reference inventory and pairs
 
@@ -168,7 +168,7 @@ P0–P3, P6 and P8 keep their scores: the Windows images confirm each cell. They
 
 ## 7. Findings
 
-Redesign plan step numbers refer to `DESKTOP_LIQUID_GLASS_REDESIGN_PLAN.md`: 1 foundations (dependencies, tokens, Google Sans), 2 window chrome, 3 UI primitives, 4 shell (sidebar and panel), 5 Overview and energy flow, 6 charts and History, 7 Usage & Cost and Data Quality, 8 Settings, 9 state screens and banners, 10 accessibility fallbacks and tooltips, 11 test and harness migration plus packaged verification, 12 polish. "Revised" marks a finding whose reference or fix changed in this revision.
+Redesign plan step numbers refer to `DESKTOP_LIQUID_GLASS_REDESIGN_PLAN.md`: 1 foundations (dependencies, tokens, Google Sans), 2 window chrome, 3 UI primitives, 4 shell (sidebar and panel), 5 Overview and energy flow, 6 charts and History, 7 Usage & Cost and Data Quality, 8 Settings, 9 state screens and banners, 10 accessibility fallbacks and tooltips, 11 test and harness migration plus packaged verification, 12 polish. "Revised" marks a finding whose reference or fix changed in this revision. `DESKTOP_LIQUID_GLASS_REDESIGN_PLAN.md` is superseded and removed; `SOLAR_UI_REDESIGN_PLAN.md` now owns current design, gaps and verification, and the step legend above is kept only so this audit's historical dispositions remain intelligible.
 
 ### D1 Window chrome & shell
 
