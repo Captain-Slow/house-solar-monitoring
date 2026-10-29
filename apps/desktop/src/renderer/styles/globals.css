@@ -109,6 +109,8 @@
   --ring: oklch(0.556 0 0);
   /* Keyboard focus outline: #e5e5e5, at least 5.7:1 on every dark surface it is drawn on (A4, S2). */
   --focus: #e5e5e5;
+  /* Identifying edge of input, select and textarea: #a1a1a1 (5.86:1 on the well, S3); separators keep --border. */
+  --control-edge: #a1a1a1;
   /* Dashboard chart palette — dark mode overrides. */
   --chart-1: 193 83% 55%;
   --chart-2: 243 92% 72%;
@@ -158,6 +160,13 @@
   :focus-visible {
     outline-color: Highlight;
   }
+}
+
+/* S3: interactive control boundaries are brighter than decorative separators. Unlayered, so it outranks
+   the Tailwind border-input utility; invalid controls keep their destructive border. The settings JSON
+   editors are plain textareas, not data-slot elements. */
+:is([data-slot="input"], [data-slot="native-select"], textarea):not([aria-invalid="true"]) {
+  border-color: var(--control-edge);
 }
 
 .dashboard-tile {

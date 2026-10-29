@@ -120,7 +120,7 @@ const actions: Action[] = [
     label: "Billing period",
     operation: "UpsertBillingPeriod",
     variable: "input",
-    hint: "Local dates mark the start (inclusive) and end (exclusive). Optional bill must be a JSON string accepted by the backend; do not paste an unredacted bill.",
+    hint: "Local dates mark the start and end inclusively. Optional bill must be a JSON string accepted by the backend; do not paste an unredacted bill.",
     initial:
       '{\n  "tariffId": null,\n  "startDate": "",\n  "endDate": "",\n  "note": ""\n}',
   },
