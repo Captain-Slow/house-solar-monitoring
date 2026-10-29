@@ -62,7 +62,7 @@ export function PanelShell({
         data-slot="panel-shell-content"
         data-stale={stale ? "" : undefined}
         className={cn(
-          "flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6 data-stale:opacity-[.64] data-stale:grayscale",
+          "flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6 data-stale:grayscale",
           contentClassName,
         )}
       >

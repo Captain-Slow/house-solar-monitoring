@@ -107,6 +107,8 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  /* Keyboard focus outline: #e5e5e5, at least 5.7:1 on every dark surface it is drawn on (A4, S2). */
+  --focus: #e5e5e5;
   /* Dashboard chart palette — dark mode overrides. */
   --chart-1: 193 83% 55%;
   --chart-2: 243 92% 72%;
@@ -142,6 +144,19 @@
     background: #09090b;
     color: var(--foreground);
     font-family: var(--app-font-sans);
+  }
+}
+
+/* S2: one visible keyboard focus outline. Unlayered, so it outranks Tailwind's layered outline-none
+   utilities. A universal :focus-visible also covers focus stops no element list can enumerate
+   (native <summary>, scrollable regions). */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  :focus-visible {
+    outline-color: Highlight;
   }
 }
 
