@@ -7,7 +7,7 @@ Next owner decision: C1, the cloud credential path (F). Acceptance wording: `SOL
 ## A. Decisions needed from the owner
 
 - [x] **Desktop redesign work.** Resolved: it was committed by a separate session as `c12d20c` and `d5471ae` (already on `origin/main`). The only leftover untracked `DESKTOP_UI_AUDIT_PLAN.md` was purged on 2026-10-25. The redesign commits themselves were not reviewed or tested by this contract-fix work; review them separately if needed.
-- [x] **`PLAN_MODE_PROMPT.txt`.** Purged on 2026-10-25 (owner decision). A backup of both purged files is outside the repo at `D:/Github/_house-solar-purged-backup-2026-10-25/untracked.tar`; delete it when no longer wanted. No tracked doc referenced it; the plan and `docs/field-mapping.md` are now the record.
+- [x] **`PLAN_MODE_PROMPT.txt`.** Purged on 2026-10-25 (owner decision). The backup of both purged files that was kept outside the repo (`D:/Github/_house-solar-purged-backup-2026-10-25`) was deleted on 2026-11-10. No tracked doc referenced it; the plan and `docs/field-mapping.md` are now the record.
 - [x] **Line endings.** Resolved 2026-11-09. Every tracked text blob was already LF; the CRLF files were `core.autocrlf=true`
   checkout artifacts. Root `.gitattributes` now sets `* text=auto eol=lf` (`*.png` and `*.webp` binary), the redundant
   `apps/backend/.gitattributes` is removed and the CRLF working-tree files were converted. Renormalizing changes no blob.
@@ -74,8 +74,8 @@ explicit "implement" from the owner.
   packaged Windows app, 200% text and 914x672 reflow, scrolled-region focus stops, dialog focus restoration, forced colors,
   S3 invalid and disabled states, the stale-frame chart canvas, and the native date/month picker Tab stop, which shows no
   focus indicator.
-- [ ] **Rebuild the installer.** The only built installer (`apps/desktop/release/House Solar Monitoring Setup 0.1.0.exe`,
-  2026-10-25) predates S1-S4.
+- [ ] **Rebuild the installer.** The only built installer (`apps/desktop/release/`, built 2026-10-25) predated S1-S4 and was
+  deleted on 2026-11-10; `npm run package -w apps/desktop` regenerates it. The audit baseline exe it held is gone.
 - [ ] **Gated, no work scheduled:** `requestRecalculation` (D06), brand packaging (D19), native icon export (D20), web and
   native clients (R-client), the cloud UI frames (A12.13; they follow the A1 backend contract, see F), and findings F1 (the
   window waits up to 10 s for the connection check), F2 (Forget can leave the token on disk) and F4 (the flow animation has
@@ -119,6 +119,7 @@ plan-only until C1 and C2 pass and the owner says "implement".
 - [ ] **Mockup frames are outside the repo.** Batches 1-12 (about 520 MB of PNG and HTML; the decision documents cite
   frame IDs such as B12-43) exist only in
   `%LOCALAPPDATA%/Temp/claude/D--Github-house-solar-monitoring/5dcbc0dc-0edb-442c-9d0f-8da73cadad4b/scratchpad/` and in the
-  Claude Design canvases. Archive them somewhere durable, or accept losing them.
+  Claude Design canvases. Owner decision 2026-11-10: leave them in place for now; archive them somewhere durable later, or accept losing them.
+  Also listed in `AGENTS.md` ("Known artifacts outside the repo").
 - [ ] **The rendered-verification harness is not versioned.** It lives in `captures/local/ui-audit/harness` (`captures/` is
   gitignored), so it exists only on this machine; the implementation plan's WP0.3 extends it.
