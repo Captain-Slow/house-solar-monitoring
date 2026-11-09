@@ -10,9 +10,9 @@ Build a monitoring-only system for the user's Hoymiles hybrid installation: inve
 - **Hard limits.** No writes to the inverter, battery, or gateway. No control, firmware, account, or tariff-provider changes. No cloud login, **except the read-only stopgap adapter defined in Amendment A1** (cloud login by the user, never by me). No Android UI scraping and no ADB use.
 
 ### User decisions (binding)
-- **Gateway Ethernet wiring:** **none (checked 2026-10-17).** The stick is on Wi-Fi only; the user says it is outdoors and a long cable is impractical. A single-address test of its Wi-Fi IP, port 502, was refused. A client bridge next to the stick is possible later, after consulting the installer.
+- **Gateway Ethernet wiring:** **none (checked 2026-10-17).** The stick is on Wi-Fi only; the user says it is outdoors and a long cable is impractical. A single-address test of its Wi-Fi IP, port 502, was refused. A client bridge next to the stick is possible later, after consulting the installer. **Deferred 2026-11-09 (owner chose cloud first); checkpoint 2026-12-07.**
 - **Other local Modbus clients:** none.
-- **Cloud fallback:** **stopgap only, from Amendment A1 (2026-10-17).** Local Modbus stays the target source. Until the stick has a verified wired Modbus path, a read-only cloud adapter may feed lower-confidence data. The original "none" is superseded by A1; its limits are binding.
+- **Cloud fallback:** **stopgap only, from Amendment A1 (2026-10-17); the first track to build since 2026-11-09 (owner decision: cloud first, wired deferred; checkpoint 2026-12-07).** Local Modbus stays the target source. Until the stick has a verified wired Modbus path, a read-only cloud adapter may feed lower-confidence, non-ledger data. The original "none" is superseded by A1; its limits are binding.
 - **Tariff:** **TNB Peninsular Malaysia, NEM 3.0 (NEM Rakyat/NOVA), domestic Time-of-Use.** Currency `MYR`. Site timezone `Asia/Kuala_Lumpur` (UTC+8, no DST); the PC locale is en-MY.
 - **Trusted reference:** manual readings of the TNB meter's import/export registers.
 - **Image distribution:** private GHCR image `ghcr.io/captain-slow/house-solar-backend` (lowercase, as GHCR requires), pulled using a TrueNAS registry login.
@@ -25,7 +25,7 @@ Build a monitoring-only system for the user's Hoymiles hybrid installation: inve
   - The Python library is used once, during Phase 1, as an independent reference decoder.
 - **Accounting:** grid import/export is integrated by us from the **external grid meter's instantaneous power**: `METER_NET` uses the meter's own total (register 1814) and `METER_PER_PHASE` uses its three per-phase readings (1808/1810/1812), each split directionally per integration interval. The inverter's own lifetime counters are kept as cross-checks. Everything is reconciled against TNB meter readings.
 - **Cost:** a small, effective-dated tariff engine that must reproduce the user's real TNB bill.
-- **Sequencing:** the original recommendation was to deploy collection before accounting/UI work. Implementation instead progressed locally through accounting and the dashboard while the wired-path gates remained blocked. This does not waive the gates: keep the shipping collector disabled until G0–G2 pass; physical accuracy, NAS autonomy and real-bill sign-off still require their separate evidence.
+- **Sequencing:** the original recommendation was to deploy collection before accounting/UI work. Implementation instead progressed locally through accounting and the dashboard while the wired-path gates remained blocked. This does not waive the gates: keep the shipping Modbus collector disabled until G0–G2 pass (the cloud track has its own gates, Amendment A1); physical accuracy, NAS autonomy and real-bill sign-off still require their separate evidence.
 
 ```mermaid
 flowchart LR
@@ -84,7 +84,7 @@ flowchart LR
 | Maintenance / operational risk | Small unofficial map; single-client limit; unauthenticated protocol | Breaks with app updates; ToS risk; control endpoints present | Approval unknown; insufficient fields |
 | Decision | **Build** (target) | Stopgap only, non-ledger (Amendment A1) | Not built |
 
-Gates. **G0–G6 belong to the Modbus track.** Real-site Modbus collection is enabled only after G0–G2 pass. The API, accounting worker and synthetic/local verification do not require a live source; their execution is not hardware acceptance. D0 and deployment gates are common to both tracks. Deferred A1 has its own C1–C3/VC1–VC5 gates and never satisfies or bypasses G0–G6.
+Gates. **G0–G6 belong to the Modbus track.** Real-site Modbus collection is enabled only after G0–G2 pass. The API, accounting worker and synthetic/local verification do not require a live source; their execution is not hardware acceptance. D0 and deployment gates are common to both tracks. A1 (the first track to build since 2026-11-09; plan-only until C1 and C2 pass and the owner says implement) has its own C1–C3/VC1–VC5 gates and never satisfies or bypasses G0–G6.
 
 | Gate | Pass criterion | On failure |
 |---|---|---|
@@ -526,7 +526,7 @@ Data-model rules:
 
 ## GraphQL contract outline
 
-The checked-in current code-first SDL is `apps/backend/schema.gql`, consumed by `packages/contracts/codegen.ts`. The A1-only `SNAPSHOT`, `VendorLive`, `VendorDay`, `vendorLive` and `vendorDaily` entries below are deferred design, not implemented API or acceptance. Recorded M7 read-only additions are included below. The 2026-10-24 contract decisions (defaulted arguments, `powerSeries` cap, `collectorStatus` metadata, meter-total `METER_NET`) are recorded in the rules below; an outline is not proof of runtime behaviour.
+The checked-in current code-first SDL is `apps/backend/schema.gql`, consumed by `packages/contracts/codegen.ts`. The A1-only `SNAPSHOT`, `VendorLive`, `VendorDay`, `vendorLive` and `vendorDaily` entries below are planned design (A1, the first track to build since 2026-11-09), not implemented API or acceptance. Recorded M7 read-only additions are included below. The 2026-10-24 contract decisions (defaulted arguments, `powerSeries` cap, `collectorStatus` metadata, meter-total `METER_NET`) are recorded in the rules below; an outline is not proof of runtime behaviour.
 
 ```graphql
 scalar DateTime    # ISO-8601 UTC
@@ -896,14 +896,14 @@ No savings estimate is built (it was not requested).
 
 ### A1. Cloud stopgap source (2026-10-17, user decision)
 
-**Footnote: Ethernet is still the better solution.** The wired Modbus path remains the target and the only source that supports independent accounting and reconciliation (per-phase meter power every 10 s, integrated by us). The user will pursue it later: a Wi-Fi-to-Ethernet client bridge next to the stick, after consulting the installer, because the stick is outdoors, a long cable is impractical, and the user does not want to disturb the setup. Nothing in A1 removes or weakens the Modbus work.
+**Status (2026-11-09, owner decision): cloud first.** A1 is the first track to build and the wired path is deferred (checkpoint 2026-12-07). A1 stays plan-only until C1 and C2 pass and the owner says implement; nothing below is implemented. **Footnote: Ethernet is still the better solution.** The wired Modbus path remains the target and the only source that supports independent accounting and reconciliation (per-phase meter power every 10 s, integrated by us). The user will pursue it later: a Wi-Fi-to-Ethernet client bridge next to the stick, after consulting the installer, because the stick is outdoors, a long cable is impractical, and the user does not want to disturb the setup. Nothing in A1 removes or weakens the Modbus work.
 
 **Evidence that led here.** G0 failed on the Wi-Fi path: one single-address TCP connect to the stick's Wi-Fi IP, port 502, was actively refused (2026-10-17). The IP was identified only by router entry (`espressif`, MAC 48:4D:26:24:39:01, not yet matched to the label), so the device identity is unconfirmed. This agrees with the community claim that Modbus is exposed only on Ethernet.
 
 **Design contract (what the implementer must follow).**
 - **Separate storage, no ledger.** A cloud source does not feed `RawPoll`, `Sample`, `normalize.ts`, `integrate.ts`, `counters.ts` or `LedgerDirtyRange`. Those are register-shaped and 10-s-cadence by contract (a 5-minute snapshot would fail `maxGapSec = 30` or force fabricated registers and timestamps). A new migration adds `CloudSnapshot { id, dataSourceId, deviceKey, firstFetchedAt, lastFetchedAt, fetchCount, measuredAt? (nullable: the vendor gives none), payload Json (redacted, no tokens), unitsNote, counterFamily?, apiContractVersion }`. The advisory lock, `DataSource`, `Device` identity and `ApiToken` auth are reused; register-model detect and the normalizer are not.
 - **Own collector.** A `CloudCollector` module, enabled by configuration (`COLLECTOR_SOURCE = MODBUS | CLOUD | NONE`, default `NONE`); exactly one acquisition source is active per backend instance and the other's loop never starts. Changing it is a configuration change plus an `ACQUISITION_SOURCE_CHANGED` quality event, **not** an `AccountingPolicy` change. `AccountingPolicy` keeps selecting only among already-computed ledger candidates (V6, V27 stay unchanged); there is no `CLOUD` candidate and `EnergyInterval` has no cloud columns.
-  This is the deferred A1 contract, not the current Modbus-only environment default. Until A1 is implemented, the code supports `MODBUS | NONE` and defaults to `MODBUS`; the shipping TrueNAS compose keeps `COLLECTOR_ENABLED=false` until G0–G2 pass. No cloud acquisition is implemented or implicitly enabled.
+  This is the planned A1 contract, not the current Modbus-only environment default. Until A1 is implemented, the code supports `MODBUS | NONE` and defaults to `MODBUS`; the shipping TrueNAS compose keeps `COLLECTOR_ENABLED=false` until G0–G2 pass. No cloud acquisition is implemented or implicitly enabled.
 - **What cloud data feeds.** Live display and daily/period vendor figures only. GraphQL adds `vendorLive: VendorLive` and `vendorDaily(fromDate, toDate): [VendorDay!]!`; `collectorStatus.acquisitionSource: String!` (`MODBUS|CLOUD|NONE`) tells the dashboard which to use, and `liveStatus` returns `freshness: NO_DATA` while the cloud source is active. The dashboard polls `vendorLive` every 60 s when the source is `CLOUD`, with the same stale-banner rule (two missed cadences). These queries return `provenance = VENDOR_SUMMARY`, `source = CLOUD`, `measuredAt` (null when unknown), `fetchedAt`, and a `snapshotAgeSeconds`. It never produces energy totals labelled MEASURED_INTEGRATED, and never fills per-phase grid, inverter AC/EPS, derived load, or a daily balance.
 - **Freshness is source-specific.** Modbus `LIVE` is unchanged: collector-observed sample age ≤ 30 s (Modbus has no device clock, so `observedAt` is the collector's). `LIVE` is never reported for a cloud snapshot. For a cloud snapshot with unknown measurement time the status is `SNAPSHOT` (a new `Freshness` value) with the `fetchedAt` age, and the UI says "vendor snapshot, measurement time unknown"; flow animation is disabled and the fixed caption "Calculated from measured grid import/export" is replaced by "Vendor-reported; not independently measured".
 - **Accounting and billing exclusion.** Cloud data is excluded from `reconciliation` (see limit 2) and from billing (Pricing step 6: `UNAVAILABLE`, `VENDOR_DATA_ONLY`). C3's counter-family comparison is a separate vendor-comparison query that cannot change `AccountingPolicy.validated` or `accountingStatus`. A cloud-based cost estimate is out of scope for A1; adding one later needs its own amendment, with its uncertainty carried through the result and NEM lot types.
@@ -1052,7 +1052,7 @@ Evidence keys (all `docs/operations.md`; dates belong to the recorded runs):
 | G4 | blocked on named prerequisite | Real two-second cadence capture and 10 s comparison; polling configuration is not measured cadence. |
 | G5 | blocked on named prerequisite | ≥24 h site/NAS dataset with counter ratios and reset times; seeded PV/battery sources remain INTEGRATED. |
 | G6 | blocked on named prerequisite | Aligned ≥7-day utility meter photographs/readings, resolution and minimum deltas; no automatic calibration/promotion. |
-| C1 | blocked on named prerequisite | User decision on a secure authorized cloud credential path; A1 remains plan-only. |
+| C1 | blocked on named prerequisite | User decision on a secure authorized cloud credential path (the first gate of the first track since 2026-11-09); A1 remains plan-only. |
 | C2 | blocked on named prerequisite | C1 and authorized real request/response/field/cadence verification; APK routes are only static candidates. |
 | C3 | blocked on named prerequisite | Verified cloud contract and utility comparison of counter families; community issue #80 is not site evidence. |
 | VC1 | blocked on named prerequisite | C1/C2, an authorized implemented adapter, and 24 h NAS snapshot evidence. |
@@ -1078,7 +1078,7 @@ Evidence keys (all `docs/operations.md`; dates belong to the recorded runs):
 
 ## User inputs still needed (prioritized; never send passwords or tokens in chat)
 
-1. **Gateway wired path (Modbus track):** a client bridge or cable to the stick's Ethernet socket, then its wired IP (DHCP reservation). The user will arrange it later; the installer should be consulted first. **Cloud credential path (C1)** is needed for the stopgap.
+1. **Cloud credential path (C1), first priority since 2026-11-09 (cloud first):** how the user supplies the credential to the NAS without chat, repo or log exposure (Amendment A1). **Gateway wired path (Modbus track, deferred; checkpoint 2026-12-07):** a client bridge or cable to the stick's Ethernet socket, then its wired IP (DHCP reservation). The user will arrange it later; the installer should be consulted first.
 2. **TrueNAS (Phase 0/3):** pool name, trusted NAS LAN IP, free RAM and disk. Version **25.04.2.6** is already user-reported in the runbook and satisfies D0; do not ask for it again.
 3. **GHCR:** the user creates a `read:packages` PAT and enters it only in the TrueNAS registry sign-in.
 4. **TNB bills (Phase 5):** 1–3 recent bills with period dates, peak/off-peak import kWh, export kWh, every line amount, NEM credit carried and its origin, AFA rate, and the public-holiday list TNB applies to ToU. Redact account numbers before sharing as fixtures.

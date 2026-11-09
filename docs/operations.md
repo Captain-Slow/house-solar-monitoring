@@ -514,14 +514,14 @@ The final read-only reviewer independently confirmed that the exact private work
 | Acceptance | Remaining evidence/action |
 |---|---|
 | D0 / deployment | User supplies pool name, trusted NAS LAN IP, free RAM and free disk. Version 25.04.2.6 already satisfies the version gate. Only then substitute section 3 values; image push/NAS install require explicit authorization. Keep collector disabled. |
-| G0–G4 / V16 | Consult installer about cable or bridge; supply verified wired IP, then perform the sequential probes/captures in the plan. Do not scan or change gateway/router settings. Record real results in `field-mapping.md`. |
+| G0–G4 / V16 | Deferred 2026-11-09 (cloud first; checkpoint 2026-12-07). Consult installer about cable or bridge; supply verified wired IP, then perform the sequential probes/captures in the plan. Do not scan or change gateway/router settings. Record real results in `field-mapping.md`. |
 | V10 / V12 / V13 on NAS | After gated collection is deployed: measure restart gaps/duplicates; PC off and phone airplane mode for at least two hours, recording start/end; check grid coverage ≥0.99 and sample count ≥713 of720; compare live NAS UI and API and chart gaps. PC replay checks do not replace these. |
 | V11 / V20 / V21 on NAS | Perform sections 6–7 using real datasets, dump-time counts and last-complete-day totals; observe an unattended 03:30 backup. Local Docker drills do not verify NAS permissions or ZFS operations. |
 | G5 / G6 / V17 | Collect at least24h for counter ratios; photograph import/export/ToU meter registers at day0 and day7 with EXIF times and known resolution. Import delta must reach50kWh (export20kWh for an export verdict). Enter readings, inspect reconciliation, never auto-calibrate. |
 | V18 | Supply1–3 real redacted bills, actual rates/holidays and NEM opening origins. Follow bill verification above. No actual TNB rate is built in. |
 | V15 | The existing unsigned installer at `apps/desktop/release/House Solar Monitoring Setup 0.1.0.exe` predates the latest runtime correction and was not modified or accepted by this follow-on. Current unpacked-executable checks are recorded above. Rebuild the installer from current source; installation/upgrade/uninstall, installed-app setup/restart and SmartScreen handling require separate user authorization. |
 | V23 wall-clock duration | Local 45-minute synthetic replay faults and transaction-crash checks are distinct from NAS operation and OS-kill experiments. The local measurements and their exact scope are recorded above; NAS fault/autonomy and OS-kill acceptance remain unverified. |
-| A1 / C1 | Cloud stopgap remains plan-only; agree a secure credential handoff later. No cloud credentials go in chat/repo, and cloud data must never enter the ledger. |
+| A1 / C1 | Cloud stopgap is the first track to build (owner decision 2026-11-09) but remains plan-only; agreeing a secure credential handoff (C1) is its first gate. No cloud credentials go in chat/repo, and cloud data must never enter the ledger. |
 | M6 test-policy decision | Synthetic success-path verifier tests simulate attestation only in disposable databases. This proves mechanics, notV18. The user's choice to retain these or use refusal-only tests is still unresolved. |
 
 ### Review-finding fixes — 2026-10-23

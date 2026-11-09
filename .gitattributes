@@ -1,2 +1,8 @@
+# Repository text is LF on every platform. Git for Windows defaults to core.autocrlf=true, which would
+# otherwise give CRLF working trees: CRLF in Docker build contexts, in scripts copied to the NAS, and in the
+# migration files whose SHA-256 values are recorded in docs/operations.md.
+* text=auto eol=lf
 *.sh text eol=lf
 *.yaml text eol=lf
+*.png binary
+*.webp binary
